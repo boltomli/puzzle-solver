@@ -1,0 +1,344 @@
+"""剧本管理页面 — Scripts tab.
+
+Allows adding, viewing, and deleting scripts (scene text from the game).
+"""
+
+from nicegui import ui
+
+from src.services.config import load_config
+from src.ui.state import app_state
+
+
+def _is_api_configured() -> bool:
+    """Check if API is configured for AI features."""
+    config = load_config()
+    return bool(config.get("api_base_url") and config.get("api_key") and config.get("model"))
+
+
+def scripts_tab_content():
+    """Render the scripts management tab content."""
+
+    with ui.column().classes("w-full q-pa-md gap-4"):
+        ui.label("剧本管理").classes("text-h5")
+
+        # --- Add Script Section ---
+        with ui.card().classes("w-full"):
+            with ui.card_section():
+                ui.label("添加新剧本").classes("text-h6")
+
+            with ui.card_section():
+                title_input = ui.input(
+                    label="标题（可选）",
+                    placeholder="例如：第一幕、Alice的剧本",
+                ).classes("w-full")
+
+                raw_text_input = ui.textarea(
+                    label="剧本文本 *",
+                    placeholder="在此粘贴剧本文本...",
+                ).classes("w-full").props("rows=8")
+
+                # Ctrl+Enter to save shortcut
+                raw_text_input.on(
+                    "keydown.ctrl.enter",
+                    lambda: save_script(),
+                )
+
+                notes_input = ui.input(
+                    label="备注（可选）",
+                    placeholder="你的备注或观察",
+                ).classes("w-full")
+
+                def save_script():
+                    text = raw_text_input.value.strip()
+                    if not text:
+                        ui.notify("请输入剧本文本", type="warning")
+                        return
+                    app_state.add_script(
+                        raw_text=text,
+                        title=title_input.value.strip() or None,
+                        user_notes=notes_input.value.strip() or None,
+                    )
+                    # Clear inputs
+                    title_input.value = ""
+                    raw_text_input.value = ""
+                    notes_input.value = ""
+                    ui.notify("剧本已保存", type="positive")
+                    script_list.refresh()
+
+                with ui.row().classes("items-center gap-2"):
+                    ui.button(
+                        "保存剧本",
+                        on_click=save_script,
+                        icon="save",
+                    ).props("color=primary")
+                    ui.label("Ctrl+Enter 快捷保存").classes("text-caption text-grey")
+
+        # --- Script List Section ---
+        @ui.refreshable
+        def script_list():
+            if not app_state.current_project:
+                return
+
+            scripts = app_state.current_project.scripts
+            if not scripts:
+                with ui.card().classes("w-full q-pa-lg text-center"):
+                    ui.icon("description", size="3em", color="grey")
+                    ui.label("暂无剧本").classes("text-body1 text-grey q-mt-sm")
+                    ui.label("请在上方添加剧本文本，AI 将帮助您提取人物、地点等信息").classes(
+                        "text-caption text-grey"
+                    )
+                return
+
+            ui.label(f"已有 {len(scripts)} 个剧本").classes("text-subtitle1")
+
+            for script in reversed(scripts):  # Show newest first
+                with ui.card().classes("w-full"):
+                    with ui.expansion(
+                        text=_script_header(script),
+                        icon="description",
+                    ).classes("w-full") as expansion:
+                        # Full text display
+                        with ui.column().classes("w-full gap-2"):
+                            if script.metadata.user_notes:
+                                ui.label(f"📝 备注: {script.metadata.user_notes}").classes(
+                                    "text-body2 text-grey"
+                                )
+                            if script.metadata.stated_time:
+                                ui.label(
+                                    f"🕐 时间: {script.metadata.stated_time}"
+                                ).classes("text-body2")
+                            if script.metadata.stated_location:
+                                ui.label(
+                                    f"📍 地点: {script.metadata.stated_location}"
+                                ).classes("text-body2")
+
+                            ui.separator()
+                            # Show full text in a code-like block
+                            ui.html(
+                                f'<pre style="white-space: pre-wrap; word-wrap: break-word; '
+                                f'font-family: inherit; margin: 0; padding: 8px; '
+                                f'background: rgba(255,255,255,0.05); border-radius: 4px;">'
+                                f"{_escape_html(script.raw_text)}</pre>"
+                            ).classes("w-full")
+
+                            # Action buttons row
+                            with ui.row().classes("justify-end gap-2"):
+                                # Script analysis button
+                                api_ok = _is_api_configured()
+
+                                def make_analyze_handler(s_id):
+                                    async def handler():
+                                        await _run_script_analysis(s_id)
+                                    return handler
+
+                                analyze_btn = ui.button(
+                                    "🤖 分析此剧本",
+                                    on_click=make_analyze_handler(script.id),
+                                    icon="psychology",
+                                ).props(
+                                    f"{'color=secondary' if api_ok else 'color=grey disabled'} dense outline"
+                                )
+                                if not api_ok:
+                                    analyze_btn.tooltip("请先在设置页面配置 API")
+
+                                # Delete button
+                                def make_delete_handler(s_id, s_title):
+                                    def handler():
+                                        _confirm_delete_script(s_id, s_title)
+                                    return handler
+
+                                ui.button(
+                                    "删除",
+                                    on_click=make_delete_handler(
+                                        script.id,
+                                        script.title or "无标题",
+                                    ),
+                                    icon="delete",
+                                ).props("flat color=negative dense")
+
+                    # Show preview text outside the expansion header area
+                    preview = script.raw_text[:200]
+                    if len(script.raw_text) > 200:
+                        preview += "..."
+
+        def _confirm_delete_script(script_id: str, script_title: str):
+            """Show a confirmation dialog before deleting a script."""
+            with ui.dialog() as dialog, ui.card():
+                ui.label(f"确认删除剧本「{script_title}」？").classes("text-h6")
+                ui.label("此操作不可撤销").classes("text-body2 text-grey")
+
+                def do_delete():
+                    app_state.remove_script(script_id)
+                    ui.notify("删除成功", type="positive")
+                    dialog.close()
+                    script_list.refresh()
+
+                with ui.row().classes("w-full justify-end q-mt-md"):
+                    ui.button("取消", on_click=dialog.close).props("flat")
+                    ui.button("删除", on_click=do_delete).props("color=negative")
+
+            dialog.open()
+
+        script_list()
+
+
+async def _run_script_analysis(script_id: str):
+    """Run AI analysis on a specific script and show results."""
+    proj = app_state.current_project
+    if not proj:
+        return
+
+    script = next((s for s in proj.scripts if s.id == script_id), None)
+    if not script:
+        ui.notify("找不到剧本", type="warning")
+        return
+
+    spinner = ui.spinner("dots", size="lg", color="primary")
+    try:
+        from src.services.deduction import DeductionService
+
+        service = DeductionService()
+        ui.notify("🤖 正在分析剧本...", type="info")
+        result = await service.analyze_script(proj, script)
+
+        spinner.delete()
+        _show_analysis_results_dialog(proj, result, script_id)
+    except ValueError as e:
+        spinner.delete()
+        ui.notify(str(e), type="negative")
+    except Exception as e:
+        spinner.delete()
+        ui.notify(f"剧本分析失败: {str(e)[:200]}", type="negative", timeout=10000)
+
+
+def _show_analysis_results_dialog(proj, result: dict, script_id: str):
+    """Show the script analysis results in a dialog."""
+    chars_mentioned = result.get("characters_mentioned", [])
+    locs_mentioned = result.get("locations_mentioned", [])
+    time_refs = result.get("time_references", [])
+    direct_facts = result.get("direct_facts", [])
+
+    with ui.dialog() as dlg, ui.card().classes("w-[600px] max-h-[80vh]"):
+        ui.label("📊 剧本分析结果").classes("text-h6 q-mb-md")
+
+        # Characters found
+        if chars_mentioned:
+            ui.label(f"👤 人物 ({len(chars_mentioned)})").classes(
+                "text-subtitle1 text-weight-bold q-mb-sm"
+            )
+            for ch in chars_mentioned:
+                name = ch.get("name", "未知")
+                is_new = ch.get("is_new", False)
+                context = ch.get("context", "")
+                with ui.row().classes("w-full items-center justify-between q-mb-xs"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(name).classes("text-body1")
+                        if is_new:
+                            ui.badge("新发现", color="orange").classes("text-caption")
+                        if context:
+                            ui.label(context).classes("text-caption text-grey")
+                    if is_new:
+                        def make_add_char(ch_name):
+                            def handler():
+                                app_state.add_character(name=ch_name)
+                                ui.notify(f"已添加人物「{ch_name}」", type="positive")
+                            return handler
+
+                        ui.button(
+                            "添加", on_click=make_add_char(name), icon="person_add"
+                        ).props("dense color=primary outline size=sm")
+
+        # Locations found
+        if locs_mentioned:
+            ui.separator().classes("q-my-sm")
+            ui.label(f"📍 地点 ({len(locs_mentioned)})").classes(
+                "text-subtitle1 text-weight-bold q-mb-sm"
+            )
+            for lo in locs_mentioned:
+                name = lo.get("name", "未知")
+                is_new = lo.get("is_new", False)
+                context = lo.get("context", "")
+                with ui.row().classes("w-full items-center justify-between q-mb-xs"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(name).classes("text-body1")
+                        if is_new:
+                            ui.badge("新发现", color="orange").classes("text-caption")
+                        if context:
+                            ui.label(context).classes("text-caption text-grey")
+                    if is_new:
+                        def make_add_loc(lo_name):
+                            def handler():
+                                app_state.add_location(name=lo_name)
+                                ui.notify(f"已添加地点「{lo_name}」", type="positive")
+                            return handler
+
+                        ui.button(
+                            "添加", on_click=make_add_loc(name), icon="add_location"
+                        ).props("dense color=primary outline size=sm")
+
+        # Time references
+        if time_refs:
+            ui.separator().classes("q-my-sm")
+            ui.label(f"🕐 时间引用 ({len(time_refs)})").classes(
+                "text-subtitle1 text-weight-bold q-mb-sm"
+            )
+            for tr in time_refs:
+                ts = tr.get("time_slot", "?")
+                ref = tr.get("reference_text", "")
+                explicit = tr.get("is_explicit", False)
+                with ui.row().classes("items-center gap-2 q-mb-xs"):
+                    if ts:
+                        ui.badge(ts, color="primary").classes("text-body2")
+                    ui.label(ref).classes("text-body2")
+                    if explicit:
+                        ui.badge("明确", color="positive").classes("text-caption")
+
+        # Direct facts
+        if direct_facts:
+            ui.separator().classes("q-my-sm")
+            ui.label(f"✅ 直接事实 ({len(direct_facts)})").classes(
+                "text-subtitle1 text-weight-bold q-mb-sm"
+            )
+            for df in direct_facts:
+                char_n = df.get("character_name", "?")
+                loc_n = df.get("location_name", "?")
+                ts = df.get("time_slot", "?")
+                conf = df.get("confidence", "medium")
+                evidence = df.get("evidence", "")
+                with ui.card().classes("w-full q-mb-sm q-pa-sm"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(f"👤 {char_n}").classes("text-weight-bold")
+                        ui.label(f"📍 {loc_n}")
+                        if ts:
+                            ui.badge(ts, color="primary")
+                        ui.badge(conf, color="grey").classes("text-caption")
+                    if evidence:
+                        ui.label(evidence).classes("text-caption text-grey")
+
+        if not chars_mentioned and not locs_mentioned and not time_refs and not direct_facts:
+            ui.label("未提取到有效信息").classes("text-body1 text-grey")
+
+        with ui.row().classes("w-full justify-end q-mt-md"):
+            ui.button("关闭", on_click=dlg.close).props("flat")
+
+    dlg.open()
+
+
+def _script_header(script) -> str:
+    """Build a summary line for a script expansion header."""
+    title = script.title or "无标题剧本"
+    time_str = script.added_at.strftime("%m-%d %H:%M")
+    preview = script.raw_text[:80].replace("\n", " ")
+    if len(script.raw_text) > 80:
+        preview += "..."
+    return f"{title} — {time_str} | {preview}"
+
+
+def _escape_html(text: str) -> str:
+    """Escape HTML special characters for safe display."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )

@@ -1,0 +1,393 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PuzzleSolverDataModel",
+  "description": "Complete data model for the script-based mystery game puzzle solver",
+
+  "definitions": {
+
+    "TimeSlot": {
+      "type": "string",
+      "pattern": "^\\d{2}:\\d{2}$",
+      "description": "A predefined time slot in HH:MM format, e.g. '15:00'"
+    },
+
+    "Project": {
+      "type": "object",
+      "description": "Top-level game/project container. One project = one mystery game playthrough.",
+      "required": ["id", "name", "time_slots", "created_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the mystery game or scenario"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional overview of the mystery premise"
+        },
+        "time_slots": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TimeSlot" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "All predefined time slots for this game, in chronological order"
+        },
+        "characters": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Character" },
+          "description": "All known characters"
+        },
+        "locations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Location" },
+          "description": "All known locations"
+        },
+        "scripts": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Script" },
+          "description": "All script/scene entries added to this project"
+        },
+        "facts": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Fact" },
+          "description": "User-confirmed facts (character-location-time assignments)"
+        },
+        "rejections": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Rejection" },
+          "description": "User-rejected deductions with reasons"
+        },
+        "deductions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Deduction" },
+          "description": "AI-generated deduction candidates pending review"
+        },
+        "hints": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Hint" },
+          "description": "Game-provided hints and rules"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Character": {
+      "type": "object",
+      "description": "A character in the mystery game. May be discovered progressively.",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "description": "Primary display name"
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Alternative names, nicknames, or references to this character"
+        },
+        "description": {
+          "type": "string",
+          "description": "Known info about the character (role, relationships, etc.)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "suspected", "unknown"],
+          "default": "confirmed",
+          "description": "confirmed = definitely a distinct character; suspected = might be alias of another; unknown = identity unclear"
+        },
+        "discovered_in_script_id": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "Which script first introduced this character"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Location": {
+      "type": "object",
+      "description": "A location in the mystery game. Discovered progressively.",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "description": "Known info about the location"
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Alternative names for this location"
+        },
+        "discovered_in_script_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Script": {
+      "type": "object",
+      "description": "A script/scene entry. Contains raw text from the game describing a scene with dialogue, actions, etc.",
+      "required": ["id", "raw_text", "added_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string",
+          "description": "User-given title or label for this script segment"
+        },
+        "raw_text": {
+          "type": "string",
+          "description": "The full raw script text as provided by the game"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "stated_time": {
+              "type": ["string", "null"],
+              "description": "Time explicitly stated in the script (may differ from actual chronological time)"
+            },
+            "stated_location": {
+              "type": ["string", "null"],
+              "description": "Location explicitly stated in the script"
+            },
+            "characters_mentioned": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Character IDs mentioned or appearing in this script"
+            },
+            "source_order": {
+              "type": "integer",
+              "description": "Order in which this script was provided/discovered by the user"
+            },
+            "user_notes": {
+              "type": "string",
+              "description": "Any notes the user added about this script"
+            }
+          }
+        },
+        "added_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Fact": {
+      "type": "object",
+      "description": "A confirmed fact: character X was at location Y at time Z. The core unit of the solution grid.",
+      "required": ["id", "character_id", "location_id", "time_slot", "source_type", "confirmed_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "character_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "location_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "time_slot": {
+          "$ref": "#/definitions/TimeSlot"
+        },
+        "source_type": {
+          "type": "string",
+          "enum": ["script_explicit", "user_input", "ai_deduction", "game_hint"],
+          "description": "How this fact was established"
+        },
+        "source_evidence": {
+          "type": "string",
+          "description": "Human-readable explanation of why this fact is confirmed"
+        },
+        "source_script_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Which script(s) support this fact"
+        },
+        "from_deduction_id": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "If confirmed from an AI deduction, link to the original deduction"
+        },
+        "confirmed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Rejection": {
+      "type": "object",
+      "description": "A rejected deduction. Serves as a negative constraint so the AI doesn't re-suggest it.",
+      "required": ["id", "character_id", "location_id", "time_slot", "reason", "rejected_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "character_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "location_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "time_slot": {
+          "$ref": "#/definitions/TimeSlot"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why this deduction was rejected by the user"
+        },
+        "from_deduction_id": {
+          "type": ["string", "null"],
+          "format": "uuid",
+          "description": "The deduction that was rejected"
+        },
+        "rejected_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Deduction": {
+      "type": "object",
+      "description": "An AI-generated deduction candidate pending user review.",
+      "required": ["id", "character_id", "location_id", "time_slot", "confidence", "reasoning", "status", "created_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "character_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "location_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "time_slot": {
+          "$ref": "#/definitions/TimeSlot"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["certain", "high", "medium", "low"],
+          "description": "AI's confidence level in this deduction"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Step-by-step reasoning chain explaining how this deduction was reached"
+        },
+        "supporting_script_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Scripts that support this deduction"
+        },
+        "depends_on_fact_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Facts that this deduction builds upon"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "rejected"],
+          "default": "pending"
+        },
+        "batch_id": {
+          "type": "string",
+          "description": "Groups deductions from the same AI call together"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolved_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Hint": {
+      "type": "object",
+      "description": "A game-provided hint or rule that constrains the solution space.",
+      "required": ["id", "type", "content"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["rule", "hint", "constraint"],
+          "description": "rule = game-wide rule (e.g. 'each person at exactly one location per time'); hint = game-provided clue; constraint = user-observed restriction"
+        },
+        "content": {
+          "type": "string",
+          "description": "The hint/rule text"
+        },
+        "applies_to": {
+          "type": "object",
+          "description": "Optional scope limiter",
+          "properties": {
+            "character_ids": {
+              "type": "array",
+              "items": { "type": "string", "format": "uuid" }
+            },
+            "location_ids": {
+              "type": "array",
+              "items": { "type": "string", "format": "uuid" }
+            },
+            "time_slots": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/TimeSlot" }
+            }
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+
+  "type": "object",
+  "$ref": "#/definitions/Project"
+}
