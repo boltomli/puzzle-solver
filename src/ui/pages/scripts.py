@@ -5,8 +5,6 @@ Allows adding, viewing, and deleting scripts (scene text from the game).
 
 import re
 
-from nicegui import ui
-
 from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
 from src.services.config import load_config
 from src.ui.state import app_state
@@ -20,6 +18,7 @@ def _is_api_configured() -> bool:
 
 def scripts_tab_content():
     """Render the scripts management tab content."""
+    from nicegui import ui
 
     with ui.column().classes("w-full q-pa-md gap-4"):
         ui.label("剧本管理").classes("text-h5")
@@ -249,6 +248,7 @@ def scripts_tab_content():
 
 async def _run_script_analysis(script_id: str, on_complete=None):
     """Run AI analysis on a specific script and show results."""
+    from nicegui import ui
     proj = app_state.current_project
     if not proj:
         return
@@ -286,6 +286,7 @@ async def _run_script_analysis(script_id: str, on_complete=None):
 
 def _show_analysis_results_dialog(proj, result: dict, script_id: str):
     """Show the script analysis results in a dialog."""
+    from nicegui import ui
     chars_mentioned = result.get("characters_mentioned", [])
     locs_mentioned = result.get("locations_mentioned", [])
     time_refs = result.get("time_references", [])

@@ -4,8 +4,6 @@ Displays a time × character matrix table showing where each character was at ea
 Supports quick-add facts from cells, AI deduction triggers, and cascade elimination.
 """
 
-from nicegui import ui
-
 from src.models.puzzle import (
     Deduction,
     DeductionStatus,
@@ -87,6 +85,7 @@ def build_matrix_data(project: Project) -> list[dict]:
 
 def matrix_tab_content():
     """Render the reasoning matrix tab content."""
+    from nicegui import ui
     global _last_contradictions
 
     with ui.column().classes("w-full q-pa-md gap-4"):
@@ -237,6 +236,7 @@ def matrix_tab_content():
 
 def _render_contradictions(contradictions: list[dict]):
     """Render a prominent contradiction warning card."""
+    from nicegui import ui
     with ui.card().classes("w-full q-mb-md").style(
         "border: 2px solid #ff5252; background-color: rgba(255, 82, 82, 0.08);"
     ):
@@ -272,6 +272,7 @@ def _show_new_entities_dialog(
     new_locs: list[dict],
 ):
     """Show a dialog listing newly discovered entities with add buttons."""
+    from nicegui import ui
     with ui.dialog() as dlg, ui.card().classes("w-[500px]"):
         ui.label("🆕 发现新实体").classes("text-h6 q-mb-md")
         ui.label("AI 在分析中发现了以下未知人物/地点：").classes("text-body2 text-grey q-mb-md")
@@ -328,6 +329,7 @@ def _show_new_entities_dialog(
 
 def _render_matrix(proj: Project):
     """Render the matrix table and statistics."""
+    from nicegui import ui
     rows = build_matrix_data(proj)
 
     if not rows:
@@ -412,6 +414,7 @@ def _render_matrix(proj: Project):
 
 def _show_quick_add_dialog(proj: Project, char_id: str, time_slot: str):
     """Show a dialog to quickly add a fact from a matrix cell click."""
+    from nicegui import ui
     if not char_id or not time_slot:
         return
 
@@ -458,6 +461,7 @@ def _show_quick_add_dialog(proj: Project, char_id: str, time_slot: str):
 
 def _render_statistics(proj: Project):
     """Render matrix fill statistics below the table."""
+    from nicegui import ui
     total_cells = len(proj.characters) * len(proj.time_slots)
     if total_cells == 0:
         return

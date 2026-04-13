@@ -1,0 +1,7 @@
+{
+  "featureId": "1.4",
+  "status": "pass",
+  "issues": [],
+  "summary": "Entity-management E2E tests now verify CRUD for characters, locations, time slots, hints, and manual facts, including persistence and matrix updates, satisfying the milestone-1 contract.",
+  "sharedStateObservations": []
+}

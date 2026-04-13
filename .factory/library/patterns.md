@@ -1,40 +1,96 @@
-# Library — Puzzle Solver QoL Mission
+# Library — Puzzle Solver Flet Rewrite
 
-## NiceGUI Patterns Used in This Project
+## Flet Patterns for This Project
 
-### Combo Select (dropdown + manual input)
+### Page Tab Structure
 ```python
-ui.select(options=['opt1', 'opt2'], new_value_mode='add', label='Model').classes('w-full')
-# Or with use-input prop for filtering:
-ui.select(options=['opt1'], label='Model').props('use-input new-value-mode=add')
+import flet as ft
+
+def main(page: ft.Page):
+    page.title = "Puzzle Solver"
+    page.theme_mode = ft.ThemeMode.DARK
+
+    tabs = ft.Tabs(
+        selected_index=0,
+        tabs=[
+            ft.Tab(text="剧本", icon=ft.Icons.DESCRIPTION),
+            ft.Tab(text="矩阵", icon=ft.Icons.GRID_ON),
+            ft.Tab(text="管理", icon=ft.Icons.PEOPLE),
+            ft.Tab(text="审查", icon=ft.Icons.FACT_CHECK),
+            ft.Tab(text="设置", icon=ft.Icons.SETTINGS),
+        ],
+    )
 ```
 
-### Banner for notifications
+### Dialog Pattern
 ```python
-with ui.card().classes('w-full q-pa-sm q-mb-md').style('border: 1px solid #ff9800; background-color: rgba(255, 152, 0, 0.08);'):
-    with ui.row().classes('items-center gap-2'):
-        ui.icon('warning', color='warning')
-        ui.label('API 未配置，请前往设置页面配置').classes('text-body2')
-        ui.button('前往设置', on_click=lambda: tabs.set_value('settings')).props('flat dense color=warning')
+def show_confirm_dialog(page, title, message, on_confirm):
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text(title),
+        content=ft.Text(message),
+        actions=[
+            ft.TextButton("取消", on_click=lambda e: close_dlg()),
+            ft.ElevatedButton("确认", on_click=lambda e: (on_confirm(), close_dlg())),
+        ],
+    )
+    def close_dlg():
+        dlg.open = False
+        page.update()
+    page.overlay.append(dlg)
+    dlg.open = True
+    page.update()
 ```
 
-### Tab with badge
+### State Refresh Pattern
 ```python
-with ui.tabs() as tabs:
-    ui.tab('review', label='审查', icon='fact_check')
-# Badge can be added via:
-# Use ui.badge() positioned near the tab, or use JavaScript/Quasar slots
+# After any app_state mutation, rebuild the affected content:
+def refresh():
+    content_container.content = build_content()
+    page.update()
+
+# Example:
+def on_add_character(e):
+    app_state.add_character(name=name_field.value)
+    page.snack_bar = ft.SnackBar(ft.Text("角色已添加"))
+    page.snack_bar.open = True
+    refresh()
 ```
 
-### PyInstaller frozen state handling
+### Async Operations
 ```python
-import sys
-import os
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    os.chdir(sys._MEIPASS)
+async def run_analysis(e):
+    progress = ft.ProgressRing()
+    content.controls.append(progress)
+    page.update()
+    try:
+        result = await service.analyze_script(proj, script)
+        # handle result
+    finally:
+        content.controls.remove(progress)
+        page.update()
 ```
 
-### OpenAI SDK list models
+### Color-Coded Cells in DataTable
+```python
+def make_cell(value, status):
+    color_map = {
+        "confirmed": ft.Colors.GREEN_100,
+        "pending": ft.Colors.AMBER_100,
+        "unknown": None,
+    }
+    bg = color_map.get(status)
+    return ft.DataCell(
+        ft.Container(
+            content=ft.Text(value or "—", color=ft.Colors.GREY if not value else None),
+            bgcolor=bg,
+            padding=5,
+            border_radius=4,
+        )
+    )
+```
+
+### OpenAI SDK — List Models (unchanged)
 ```python
 async def list_models(self) -> list[str]:
     self._ensure_client()
@@ -42,3 +98,21 @@ async def list_models(self) -> list[str]:
     models = await self.client.models.list()
     return sorted([m.id for m in models.data])
 ```
+
+## Pure Logic Functions (MUST PRESERVE)
+
+### build_matrix_data (matrix.py)
+Tested by test_matrix.py — 11 tests. Must have identical signature:
+`def build_matrix_data(project: Project) -> list[dict]`
+
+### _create_single_deduction (scripts.py)
+Tested by test_scripts.py. Must have identical signature:
+`def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool`
+
+### _create_deductions_from_facts (scripts.py)
+Tested by test_scripts.py. Must have identical signature:
+`def _create_deductions_from_facts(proj, direct_facts: list[dict], script_id: str) -> int`
+
+### _is_api_configured (scripts.py)
+Tested by test_scripts.py. Must have identical signature:
+`def _is_api_configured() -> bool`

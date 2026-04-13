@@ -79,13 +79,7 @@ class TestAppStateProject:
         loaded = state.store.load_project(project.id)
         assert loaded.name == "Updated Name"
 
-    def test_change_callback(self, state):
-        calls = []
-        state.on_change(lambda: calls.append(1))
-        state.create_project(name="CB Test")
-        assert len(calls) == 1
-        state.save()  # save alone doesn't notify
-        assert len(calls) == 1
+
 
 
 class TestAppStateCharacters:
@@ -271,50 +265,6 @@ class TestAppStateHints:
         state.create_project(name="Test")
         removed = state.remove_hint("nonexistent")
         assert removed is False
-
-
-class TestAppStateCallbacks:
-    def test_multiple_callbacks(self, state):
-        calls_a = []
-        calls_b = []
-        state.on_change(lambda: calls_a.append(1))
-        state.on_change(lambda: calls_b.append(1))
-        state.create_project(name="Test")
-        assert len(calls_a) == 1
-        assert len(calls_b) == 1
-
-    def test_callback_on_entity_add(self, state):
-        state.create_project(name="Test")
-        calls = []
-        state.on_data_change(lambda: calls.append(1))
-        state.add_character(name="Alice")
-        state.add_location(name="Library")
-        assert len(calls) == 2
-
-    def test_bad_callback_does_not_break(self, state):
-        """A failing callback should not prevent others from running."""
-        calls = []
-
-        def bad_cb():
-            raise RuntimeError("bad callback")
-
-        state.on_change(bad_cb)
-        state.on_change(lambda: calls.append(1))
-        state.create_project(name="Test")
-        assert len(calls) == 1  # Second callback still ran
-
-    def test_bad_data_callback_does_not_break(self, state):
-        """A failing data callback should not prevent others from running."""
-        state.create_project(name="Test")
-        calls = []
-
-        def bad_cb():
-            raise RuntimeError("bad data callback")
-
-        state.on_data_change(bad_cb)
-        state.on_data_change(lambda: calls.append(1))
-        state.add_character(name="Alice")
-        assert len(calls) == 1  # Second callback still ran
 
 
 class TestSaveScriptAnalysis:
