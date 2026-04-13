@@ -17,6 +17,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "api_key": "",
     "model": "",
     "system_prompt_override": "",
+    "timeout": 300,  # HTTP request timeout in seconds (0 = no timeout)
 }
 
 
