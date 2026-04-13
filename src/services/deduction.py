@@ -87,6 +87,50 @@ class DeductionService:
             logger.exception("run_deduction: failed for project={!r}", project.name)
             raise
 
+    async def run_focused_deduction(self, project: Project, focus_filter: dict) -> dict:
+        """Run a focused AI deduction pass limited to specific dimensions.
+
+        Similar to run_deduction() but passes focus_filter to PromptEngine so the
+        AI only reasons about the selected characters/locations/time_slots.
+
+        Args:
+            project: The project to run deduction on.
+            focus_filter: Dict with optional keys:
+                - ``character_ids``: list of character IDs to focus on
+                - ``location_ids``: list of location IDs to focus on
+                - ``time_slots``: list of time slots to focus on
+
+        Returns:
+            Parsed response dict with deductions, new entities, contradictions.
+        """
+        logger.info(
+            "run_focused_deduction: project={!r} focus_filter={}",
+            project.name,
+            focus_filter,
+        )
+        system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(
+            project, focus_filter=focus_filter
+        )
+        logger.debug(
+            "run_focused_deduction: prompt built (user_prompt_len={})", len(user_prompt)
+        )
+        try:
+            raw = await self.llm.chat(system_prompt, user_prompt)
+            result = _extract_json(raw)
+            logger.info(
+                "run_focused_deduction: got deductions={} new_chars={} new_locs={} contradictions={}",
+                len(result.get("deductions", [])),
+                len(result.get("new_characters_detected", [])),
+                len(result.get("new_locations_detected", [])),
+                len(result.get("contradictions_detected", [])),
+            )
+            return result
+        except Exception:
+            logger.exception(
+                "run_focused_deduction: failed for project={!r}", project.name
+            )
+            raise
+
     async def analyze_script(self, project: Project, script: Script) -> dict:
         """Run a lightweight script analysis.
 

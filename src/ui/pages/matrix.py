@@ -415,6 +415,174 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         )
     )
 
+    # --- Custom Deduction Section ---
+    controls.append(ft.Divider())
+    controls.append(
+        ft.Text("🎯 自定义推断", size=16, weight=ft.FontWeight.BOLD)
+    )
+
+    # Track chip selection states: {id: bool}
+    selected_chars: dict[str, bool] = {c.id: False for c in proj.characters}
+    selected_locs: dict[str, bool] = {l.id: False for l in proj.locations}
+    selected_times: dict[str, bool] = {ts: False for ts in proj.time_slots}
+
+    def make_char_toggle(char_id: str):
+        def on_select(e):
+            selected_chars[char_id] = e.data == "true"
+        return on_select
+
+    def make_loc_toggle(loc_id: str):
+        def on_select(e):
+            selected_locs[loc_id] = e.data == "true"
+        return on_select
+
+    def make_time_toggle(ts: str):
+        def on_select(e):
+            selected_times[ts] = e.data == "true"
+        return on_select
+
+    # Character chips
+    char_chips = [
+        ft.Chip(
+            label=ft.Text(c.name),
+            on_select=make_char_toggle(c.id),
+            selected=False,
+        )
+        for c in proj.characters
+    ]
+
+    # Location chips
+    loc_chips = [
+        ft.Chip(
+            label=ft.Text(l.name),
+            on_select=make_loc_toggle(l.id),
+            selected=False,
+        )
+        for l in proj.locations
+    ]
+
+    # Time slot chips
+    time_chips = [
+        ft.Chip(
+            label=ft.Text(ts),
+            on_select=make_time_toggle(ts),
+            selected=False,
+        )
+        for ts in proj.time_slots
+    ]
+
+    chip_section_controls: list[ft.Control] = []
+
+    if char_chips:
+        chip_section_controls.append(
+            ft.Text("人物选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=char_chips, wrap=True, spacing=6)
+        )
+
+    if loc_chips:
+        chip_section_controls.append(
+            ft.Text("地点选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=loc_chips, wrap=True, spacing=6)
+        )
+
+    if time_chips:
+        chip_section_controls.append(
+            ft.Text("时间选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=time_chips, wrap=True, spacing=6)
+        )
+
+    async def run_focused_deduction(e):
+        """Run AI deduction focused on selected chips."""
+        focus_character_ids = [cid for cid, sel in selected_chars.items() if sel]
+        focus_location_ids = [lid for lid, sel in selected_locs.items() if sel]
+        focus_time_slots = [ts for ts, sel in selected_times.items() if sel]
+
+        if not focus_character_ids and not focus_location_ids and not focus_time_slots:
+            show_snackbar("请至少选择一个推断维度", ft.Colors.AMBER)
+            return
+
+        focus_filter = {}
+        if focus_character_ids:
+            focus_filter["character_ids"] = focus_character_ids
+        if focus_location_ids:
+            focus_filter["location_ids"] = focus_location_ids
+        if focus_time_slots:
+            focus_filter["time_slots"] = focus_time_slots
+
+        try:
+            from src.services.deduction import DeductionService
+            from loguru import logger
+
+            service = DeductionService()
+            show_snackbar("🎯 正在进行自定义推断...", ft.Colors.BLUE)
+            result = await service.run_focused_deduction(proj, focus_filter)
+            deductions_data = result.get("deductions", [])
+
+            # Build lookup maps for validation
+            char_by_id = {c.id: c for c in proj.characters}
+            loc_by_id = {l.id: l for l in proj.locations}
+            char_by_name = {c.name.lower(): c for c in proj.characters}
+            loc_by_name = {l.name.lower(): l for l in proj.locations}
+
+            count = 0
+            for d_data in deductions_data:
+                raw_char_id = d_data.get("character_id", "")
+                raw_loc_id = d_data.get("location_id", "")
+
+                char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
+                loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+
+                if not char_obj or not loc_obj:
+                    logger.warning(
+                        "run_focused_deduction: skipping unresolvable deduction "
+                        "char_id={!r} loc_id={!r}",
+                        raw_char_id, raw_loc_id,
+                    )
+                    continue
+
+                ded = Deduction(
+                    character_id=char_obj.id,
+                    location_id=loc_obj.id,
+                    time_slot=d_data.get("time_slot", "00:00"),
+                    confidence=d_data.get("confidence", "medium"),
+                    reasoning=d_data.get("reasoning", ""),
+                    supporting_script_ids=d_data.get("supporting_script_ids", []),
+                    depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
+                )
+                added = app_state.add_deduction(ded)
+                if added:
+                    count += 1
+
+            refresh()
+            show_snackbar(f"自定义推断完成：新增 {count} 条推断", ft.Colors.GREEN)
+
+        except ValueError as exc:
+            show_snackbar(str(exc), ft.Colors.RED)
+        except Exception as exc:
+            show_snackbar(f"自定义推断失败: {str(exc)[:200]}", ft.Colors.RED)
+
+    focused_button = ft.ElevatedButton(
+        "🎯 开始推断",
+        icon=ft.Icons.FILTER_ALT,
+        on_click=run_focused_deduction if api_ok else None,
+        disabled=not api_ok,
+        tooltip=None if api_ok else "请先在设置页面配置 API",
+    )
+
+    chip_section_controls.append(
+        ft.Row(controls=[focused_button], spacing=10)
+    )
+
+    controls.append(
+        ft.Column(controls=chip_section_controls, spacing=10)
+    )
+
     # --- Matrix DataTable ---
     rows = build_matrix_data(proj)
 

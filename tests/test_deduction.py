@@ -13,6 +13,7 @@ from src.models.puzzle import (
     SourceType,
 )
 from src.services.deduction import DeductionService, _extract_json
+from src.ui.state import AppState
 
 
 @pytest.fixture
@@ -351,3 +352,137 @@ class TestExtractJson:
         """Empty string raises ValueError."""
         with pytest.raises(ValueError, match="无法从 AI 响应中提取有效 JSON"):
             _extract_json("")
+
+
+class TestFocusedDeduction:
+    """Tests for DeductionService.run_focused_deduction()."""
+
+    def test_method_exists(self):
+        """DeductionService must have a run_focused_deduction method."""
+        service = DeductionService()
+        assert hasattr(service, "run_focused_deduction")
+        assert callable(service.run_focused_deduction)
+
+    @pytest.mark.asyncio
+    async def test_passes_focus_to_prompt(self, three_by_three_project):
+        """run_focused_deduction must pass focus_filter to build_deduction_prompt."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import json
+
+        focus_filter = {"character_ids": ["c1"], "time_slots": ["14:00"]}
+        fake_result = {
+            "deductions": [],
+            "new_characters_detected": [],
+            "new_locations_detected": [],
+            "contradictions_detected": [],
+            "notes": "",
+        }
+
+        with patch("src.services.deduction.PromptEngine") as mock_pe_cls, \
+             patch("src.services.deduction.LLMService") as mock_llm_cls:
+
+            mock_pe_instance = MagicMock()
+            mock_pe_instance.build_deduction_prompt.return_value = ("sys", "user")
+            mock_pe_cls.return_value = mock_pe_instance
+
+            mock_llm_instance = MagicMock()
+            mock_llm_instance.chat = AsyncMock(return_value=json.dumps(fake_result))
+            mock_llm_cls.return_value = mock_llm_instance
+
+            service = DeductionService()
+            result = await service.run_focused_deduction(
+                three_by_three_project, focus_filter
+            )
+
+        # Assert build_deduction_prompt was called with focus_filter kwarg
+        mock_pe_instance.build_deduction_prompt.assert_called_once()
+        call_kwargs = mock_pe_instance.build_deduction_prompt.call_args
+        assert call_kwargs.kwargs.get("focus_filter") == focus_filter or (
+            len(call_kwargs.args) >= 2 and call_kwargs.args[1] == focus_filter
+        )
+
+        assert isinstance(result, dict)
+
+    @pytest.mark.asyncio
+    async def test_results_deduped(self, three_by_three_project, tmp_path):
+        """run_focused_deduction results go through add_deduction() dedup."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from src.ui.state import AppState
+        import json
+
+        # Set up project with existing fact at (c1, l1, 14:00)
+        proj = three_by_three_project
+        proj.facts.append(
+            Fact(
+                character_id="c1",
+                location_id="l1",
+                time_slot="14:00",
+                source_type=SourceType.user_input,
+            )
+        )
+
+        # Mock LLM to return a deduction that duplicates the existing fact
+        fake_result = {
+            "deductions": [
+                {
+                    "character_id": "c1",
+                    "location_id": "l1",
+                    "time_slot": "14:00",
+                    "confidence": "certain",
+                    "reasoning": "Test",
+                    "supporting_script_ids": [],
+                    "depends_on_fact_ids": [],
+                }
+            ],
+            "new_characters_detected": [],
+            "new_locations_detected": [],
+            "contradictions_detected": [],
+            "notes": "",
+        }
+
+        focus_filter = {"character_ids": ["c1"]}
+
+        with patch("src.services.deduction.PromptEngine") as mock_pe_cls, \
+             patch("src.services.deduction.LLMService") as mock_llm_cls:
+
+            mock_pe_instance = MagicMock()
+            mock_pe_instance.build_deduction_prompt.return_value = ("sys", "user")
+            mock_pe_cls.return_value = mock_pe_instance
+
+            mock_llm_instance = MagicMock()
+            mock_llm_instance.chat = AsyncMock(return_value=json.dumps(fake_result))
+            mock_llm_cls.return_value = mock_llm_instance
+
+            service = DeductionService()
+            result = await service.run_focused_deduction(proj, focus_filter)
+
+        # The result dict should have the deduction in it, but it's the caller's
+        # responsibility to run it through add_deduction(). Here we verify that
+        # if we feed the result through AppState.add_deduction(), duplicates are rejected.
+        from src.storage.json_store import JsonStore
+        store = JsonStore(data_dir=str(tmp_path))
+        state = AppState(store=store)
+        state.create_project("test", time_slots=["14:00"])
+        state.current_project = proj
+
+        # Rebuild indexes to include the existing fact
+        state._rebuild_indexes()
+
+        deductions_data = result.get("deductions", [])
+        added_count = 0
+        for d_data in deductions_data:
+            ded = Deduction(
+                character_id=d_data["character_id"],
+                location_id=d_data["location_id"],
+                time_slot=d_data["time_slot"],
+                confidence=d_data.get("confidence", "medium"),
+                reasoning=d_data.get("reasoning", ""),
+            )
+            if state.add_deduction(ded):
+                added_count += 1
+
+        # The duplicate deduction (same triple as existing fact) must be rejected
+        assert added_count == 0, (
+            "Expected dedup to reject the duplicate fact triple, but it was added"
+        )
+
