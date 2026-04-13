@@ -97,13 +97,13 @@ uv run python main.py
 ### Web 模式
 
 ```bash
-# 通过环境变量
+# 通过命令行参数
+uv run python main.py --web
+
+# 或通过环境变量
 set PUZZLE_SOLVER_WEB=1  # Windows
 export PUZZLE_SOLVER_WEB=1  # Linux/macOS
 uv run python main.py
-
-# 或使用命令行参数
-uv run python main.py --web
 ```
 
 将在 http://localhost:8080 启动 Web 服务。
@@ -134,6 +134,7 @@ uv run python main.py --web
 ```
 puzzle-solver/
 ├── main.py              # 应用入口
+├── build.py             # Flet 打包脚本
 ├── pyproject.toml       # 项目配置
 ├── config.json          # API 配置（运行时生成）
 ├── data/                # 项目数据存储
@@ -148,15 +149,16 @@ puzzle-solver/
 │   ├── storage/
 │   │   └── json_store.py    # JSON 文件持久化
 │   └── ui/
+│       ├── app.py       # Flet 主应用布局与标签页
 │       ├── state.py     # 应用状态管理
-│       ├── theme.py     # 布局和主题
 │       └── pages/
 │           ├── scripts.py   # 剧本管理页
 │           ├── matrix.py    # 推理矩阵页
 │           ├── manage.py    # 实体管理页
 │           ├── review.py    # 推断审查页
 │           └── settings.py  # 设置页
-└── tests/               # 测试用例
+├── tests/               # 测试用例
+└── .github/workflows/   # CI/CD
 ```
 
 ## 🧪 测试
@@ -184,10 +186,26 @@ uv run pytest tests/ -v
 7. **审查推断**（审查页）— 逐条接受或拒绝 AI 的推断
 8. **重复 5-7**，直到矩阵完全填满
 
+## 🔨 打包
+
+```bash
+# 桌面应用打包
+python build.py
+
+# Web 应用打包
+python build.py --web
+
+# 自定义名称
+python build.py --name MyPuzzleSolver
+
+# 预览命令（不执行）
+python build.py --dry-run
+```
+
 ## 📝 技术栈
 
 - **Python 3.13** — 核心语言
-- **NiceGUI** — Web/桌面 UI 框架
+- **Flet** — 跨平台 UI 框架（桌面 + Web）
 - **Pydantic v2** — 数据模型和验证
 - **OpenAI SDK** — LLM API 调用
 - **pytest** — 测试框架
