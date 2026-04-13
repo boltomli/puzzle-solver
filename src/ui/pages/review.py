@@ -216,15 +216,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                             new_deds = DeductionService.run_cascade(proj)
                             count = 0
                             for new_ded in new_deds:
-                                already = any(
-                                    d.character_id == new_ded.character_id
-                                    and d.location_id == new_ded.location_id
-                                    and d.time_slot == new_ded.time_slot
-                                    and d.status == DeductionStatus.pending
-                                    for d in proj.deductions
-                                )
-                                if not already:
-                                    app_state.add_deduction(new_ded)
+                                if app_state.add_deduction(new_ded):
                                     count += 1
                             page.snack_bar = ft.SnackBar(
                                 ft.Text(f"已接受推断。消元发现 {count} 条新推断")

@@ -244,8 +244,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     supporting_script_ids=d_data.get("supporting_script_ids", []),
                     depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
                 )
-                app_state.add_deduction(ded)
-                count += 1
+                added = app_state.add_deduction(ded)
+                if added:
+                    count += 1
 
             # Also collect AI-reported new entities (merge with unresolvable ones)
             for ch in result.get("new_characters_detected", []):
@@ -308,16 +309,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             new_deds = DeductionService.run_cascade(proj)
             count = 0
             for ded in new_deds:
-                # Avoid duplicating existing pending deductions
-                already_exists = any(
-                    d.character_id == ded.character_id
-                    and d.location_id == ded.location_id
-                    and d.time_slot == ded.time_slot
-                    and d.status == DeductionStatus.pending
-                    for d in proj.deductions
-                )
-                if not already_exists:
-                    app_state.add_deduction(ded)
+                if app_state.add_deduction(ded):
                     count += 1
             if count > 0:
                 show_snackbar(

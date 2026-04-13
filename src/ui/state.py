@@ -34,12 +34,32 @@ class AppState:
     def __init__(self, store: JsonStore | None = None):
         self.store = store or JsonStore()
         self.current_project: Optional[Project] = None
+        # Deduplication indexes: O(1) lookup for (character_id, location_id, time_slot) triples
+        self._fact_index: set[tuple[str, str, str]] = set()
+        self._pending_index: set[tuple[str, str, str]] = set()
+        self._rejection_index: set[tuple[str, str, str]] = set()
+
+    def _rebuild_indexes(self) -> None:
+        """Rebuild all three deduplication indexes from current project data."""
+        self._fact_index = set()
+        self._pending_index = set()
+        self._rejection_index = set()
+        if not self.current_project:
+            return
+        for f in self.current_project.facts:
+            self._fact_index.add((f.character_id, f.location_id, f.time_slot))
+        for d in self.current_project.deductions:
+            if d.status == DeductionStatus.pending:
+                self._pending_index.add((d.character_id, d.location_id, d.time_slot))
+        for r in self.current_project.rejections:
+            self._rejection_index.add((r.character_id, r.location_id, r.time_slot))
 
     # --- Project management ---
 
     def load_project(self, project_id: str) -> None:
         """Load a project by ID and set it as the current project."""
         self.current_project = self.store.load_project(project_id)
+        self._rebuild_indexes()
         logger.info("AppState.load_project: loaded {!r} (id={})", self.current_project.name, project_id)
 
     def save(self) -> None:
@@ -61,6 +81,7 @@ class AppState:
             time_slots=time_slots or [],
         )
         self.current_project = project
+        self._rebuild_indexes()
         logger.info("AppState.create_project: created {!r} (id={})", name, project.id)
         return project
 
@@ -307,6 +328,7 @@ class AppState:
             source_script_ids=source_script_ids or [],
         )
         self.current_project.facts.append(fact)
+        self._fact_index.add((character_id, location_id, time_slot))
         self.save()
         logger.info(
             "AppState.add_fact: char={!r} loc={!r} ts={!r} source={}",
@@ -391,18 +413,34 @@ class AppState:
 
     # --- Deduction management ---
 
-    def add_deduction(self, deduction: Deduction) -> Deduction:
-        """Add a pending deduction to the current project."""
+    def add_deduction(self, deduction: Deduction) -> bool:
+        """Add a pending deduction to the current project.
+
+        Checks if the (character_id, location_id, time_slot) triple already exists
+        as a confirmed Fact, pending Deduction, or Rejection. If so, silently skips.
+
+        Returns:
+            True if the deduction was added, False if it was skipped as a duplicate.
+        """
         if not self.current_project:
             raise ValueError("No project loaded")
+        triple = (deduction.character_id, deduction.location_id, deduction.time_slot)
+        # Check all three indexes for duplicates
+        if triple in self._fact_index or triple in self._pending_index or triple in self._rejection_index:
+            logger.debug(
+                "AppState.add_deduction: skipping duplicate char={!r} loc={!r} ts={!r}",
+                deduction.character_id, deduction.location_id, deduction.time_slot,
+            )
+            return False
         self.current_project.deductions.append(deduction)
+        self._pending_index.add(triple)
         self.save()
         logger.debug(
             "AppState.add_deduction: char={!r} loc={!r} ts={!r} conf={}",
             deduction.character_id, deduction.location_id,
             deduction.time_slot, deduction.confidence,
         )
-        return deduction
+        return True
 
     def accept_deduction(self, deduction_id: str) -> Fact | None:
         """Accept a deduction: create a Fact from it, mark it accepted."""
@@ -427,6 +465,10 @@ class AppState:
             from_deduction_id=ded.id,
         )
         self.current_project.facts.append(fact)
+        # Update indexes: remove from pending, add to fact
+        triple = (ded.character_id, ded.location_id, ded.time_slot)
+        self._pending_index.discard(triple)
+        self._fact_index.add(triple)
         self.save()
         logger.info(
             "AppState.accept_deduction: id={!r} → fact char={!r} loc={!r} ts={!r}",
@@ -455,6 +497,10 @@ class AppState:
             from_deduction_id=ded.id,
         )
         self.current_project.rejections.append(rejection)
+        # Update indexes: remove from pending, add to rejection
+        triple = (ded.character_id, ded.location_id, ded.time_slot)
+        self._pending_index.discard(triple)
+        self._rejection_index.add(triple)
         self.save()
         logger.info(
             "AppState.reject_deduction: id={!r} reason={!r:.60}",
@@ -482,6 +528,7 @@ class AppState:
         ]
         removed = original_len - len(self.current_project.deductions)
         if removed > 0:
+            self._pending_index.clear()
             self.save()
             logger.info("AppState.clear_pending_deductions: removed {}", removed)
         return removed

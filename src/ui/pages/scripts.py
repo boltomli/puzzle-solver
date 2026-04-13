@@ -64,12 +64,18 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
         supporting_script_ids=[script_id],
         status=DeductionStatus.pending,
     )
-    app_state.add_deduction(deduction)
-    logger.info(
-        "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
-        char_name, loc_name, ts, conf,
-    )
-    return True
+    added = app_state.add_deduction(deduction)
+    if added:
+        logger.info(
+            "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
+            char_name, loc_name, ts, conf,
+        )
+    else:
+        logger.debug(
+            "_create_single_deduction: skipped duplicate char={!r} loc={!r} ts={!r}",
+            char_name, loc_name, ts,
+        )
+    return added
 
 
 def _create_deductions_from_facts(
@@ -118,8 +124,8 @@ def _create_deductions_from_facts(
             supporting_script_ids=[script_id],
             status=DeductionStatus.pending,
         )
-        app_state.add_deduction(deduction)
-        created += 1
+        if app_state.add_deduction(deduction):
+            created += 1
 
     return created
 
