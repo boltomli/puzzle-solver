@@ -87,6 +87,79 @@ def build_matrix_data(project: Project) -> list[dict]:
     return rows
 
 
+def build_location_time_data(project: Project) -> list[dict]:
+    """Build the location × time table data from a project.
+
+    Each row represents a location. Columns are: location name + one per time slot.
+    For each cell, stores the display value (character names) and a status suffix.
+
+    This is a standalone testable function (not tied to UI).
+
+    Returns:
+        List of row dicts with keys:
+        - 'id': location id
+        - 'location': location name
+        - '{time_slot}': display string (character names, confirmed first, pending in parens)
+        - '{time_slot}_status': 'confirmed' | 'pending' | 'unknown'
+    """
+    if not project.locations:
+        return []
+
+    rows = []
+    for loc in project.locations:
+        row: dict = {"id": loc.id, "location": loc.name}
+        for ts in project.time_slots:
+            # Find all confirmed facts for this (location, time_slot)
+            confirmed_char_ids = [
+                f.character_id
+                for f in project.facts
+                if f.location_id == loc.id and f.time_slot == ts
+            ]
+            # Find all pending deductions for this (location, time_slot)
+            pending_char_ids = [
+                d.character_id
+                for d in project.deductions
+                if d.location_id == loc.id
+                and d.time_slot == ts
+                and d.status == DeductionStatus.pending
+            ]
+
+            # Build character name lookup
+            char_by_id = {c.id: c.name for c in project.characters}
+
+            # Get confirmed character names
+            confirmed_names = [
+                char_by_id[cid] for cid in confirmed_char_ids if cid in char_by_id
+            ]
+            # Get pending character names (not already confirmed at this cell)
+            confirmed_set = set(confirmed_char_ids)
+            pending_names = [
+                char_by_id[cid]
+                for cid in pending_char_ids
+                if cid in char_by_id and cid not in confirmed_set
+            ]
+
+            # Combine display: confirmed names first, then pending in parentheses
+            parts: list[str] = list(confirmed_names)
+            if pending_names:
+                parts.append(f"({', '.join(pending_names)})")
+
+            display = ", ".join(parts)
+
+            # Determine status
+            if confirmed_names:
+                status = "confirmed"
+            elif pending_names:
+                status = "pending"
+            else:
+                status = "unknown"
+
+            row[ts] = display
+            row[f"{ts}_status"] = status
+        rows.append(row)
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Flet UI builder
 # ---------------------------------------------------------------------------
@@ -399,6 +472,64 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     # --- Statistics Panel ---
     controls.append(ft.Divider())
     controls.append(_build_statistics(proj))
+
+    # --- Location × Time Matrix ---
+    controls.append(ft.Divider())
+    controls.append(
+        ft.Text("地点 × 时间矩阵", size=18, weight=ft.FontWeight.BOLD)
+    )
+
+    loc_rows = build_location_time_data(proj)
+    if not loc_rows:
+        controls.append(ft.Text("暂无地点数据", color=ft.Colors.GREY, size=14))
+    else:
+        # Build DataTable columns: 地点 + one per time slot
+        loc_columns = [
+            ft.DataColumn(
+                ft.Text("地点", weight=ft.FontWeight.BOLD),
+            ),
+        ]
+        for ts in proj.time_slots:
+            loc_columns.append(
+                ft.DataColumn(
+                    ft.Text(ts, weight=ft.FontWeight.BOLD),
+                )
+            )
+
+        # Build DataTable rows
+        loc_dt_rows = []
+        for row_data in loc_rows:
+            cells = [
+                ft.DataCell(
+                    ft.Text(
+                        row_data["location"],
+                        weight=ft.FontWeight.BOLD,
+                    )
+                ),
+            ]
+            for ts in proj.time_slots:
+                value = row_data[ts]
+                status = row_data[f"{ts}_status"]
+                cells.append(_make_cell(value, status))
+            loc_dt_rows.append(ft.DataRow(cells=cells))
+
+        loc_data_table = ft.DataTable(
+            columns=loc_columns,
+            rows=loc_dt_rows,
+            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            border_radius=8,
+            heading_row_color=ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
+            column_spacing=20,
+        )
+
+        controls.append(
+            ft.Container(
+                content=ft.Row(
+                    controls=[loc_data_table],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
+        )
 
     return ft.Column(controls=controls, spacing=12)
 
