@@ -72,16 +72,34 @@ def _is_local_url(url: str) -> bool:
 # Transport factory
 # ---------------------------------------------------------------------------
 
-def _build_http_client(base_url: str) -> httpx.AsyncClient:
-    """Return an AsyncClient that bypasses the proxy for local URLs."""
+def _build_http_client(base_url: str, timeout: float = 300.0) -> httpx.AsyncClient:
+    """Return an AsyncClient that bypasses the proxy for local URLs.
+
+    Args:
+        base_url: The API base URL used to determine proxy settings.
+        timeout: Request timeout in seconds. 0 means no timeout.
+    """
+    # httpx.Timeout(None) means no timeout; otherwise set read/connect timeouts.
+    httpx_timeout = httpx.Timeout(None) if timeout == 0 else httpx.Timeout(
+        connect=10.0,
+        read=float(timeout),
+        write=float(timeout),
+        pool=10.0,
+    )
     if _is_local_url(base_url):
-        logger.debug("_build_http_client: local URL detected — bypassing system proxy")
+        logger.debug(
+            "_build_http_client: local URL detected — bypassing system proxy (timeout={}s)",
+            "∞" if timeout == 0 else timeout,
+        )
         return httpx.AsyncClient(
             transport=httpx.AsyncHTTPTransport(),  # no proxy
-            timeout=60,
+            timeout=httpx_timeout,
         )
-    logger.debug("_build_http_client: public URL detected — using system proxy (if any)")
-    return httpx.AsyncClient(timeout=60)  # httpx default: honours env proxy vars
+    logger.debug(
+        "_build_http_client: public URL detected — using system proxy (timeout={}s)",
+        "∞" if timeout == 0 else timeout,
+    )
+    return httpx.AsyncClient(timeout=httpx_timeout)  # httpx default: honours env proxy vars
 
 
 class LLMService:
@@ -92,6 +110,7 @@ class LLMService:
         self.model: str = "gpt-4"
         self._base_url: str = ""
         self._api_key: str = "no-key"
+        self._timeout: float = 300.0
 
     def _ensure_client(self) -> None:
         """Initialize or refresh the client from current config."""
@@ -99,17 +118,21 @@ class LLMService:
         base_url = config.get("api_base_url", "")
         model = config.get("model") or "gpt-4"
         api_key = config.get("api_key") or "no-key"
+        timeout_raw = config.get("timeout")
+        # Treat None/missing as default 300; allow explicit 0 to mean "no timeout"
+        timeout = float(timeout_raw) if timeout_raw is not None else 300.0
         logger.debug(
-            "LLMService._ensure_client: base_url={!r} model={!r} api_key_set={}",
+            "LLMService._ensure_client: base_url={!r} model={!r} api_key_set={} timeout={}s",
             base_url,
             model,
             bool(config.get("api_key")),
+            "∞" if timeout == 0 else timeout,
         )
         if not base_url:
             raise ValueError("API 未配置。请在设置页面配置 API Base URL。")
 
         is_local = _is_local_url(base_url)
-        http_client = _build_http_client(base_url)
+        http_client = _build_http_client(base_url, timeout)
         self.client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
@@ -118,9 +141,11 @@ class LLMService:
         self.model = model
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
+        self._timeout = timeout
         logger.info(
-            "LLMService client ready: base_url={!r} model={!r} local={} proxy_bypassed={}",
+            "LLMService client ready: base_url={!r} model={!r} local={} proxy_bypassed={} timeout={}s",
             base_url, model, is_local, is_local,
+            "∞" if timeout == 0 else timeout,
         )
 
     async def list_models(self) -> list[str]:
@@ -141,26 +166,37 @@ class LLMService:
             raise
 
     async def chat(self, system_prompt: str, user_prompt: str) -> str:
-        """Send a chat completion request and return the content string."""
+        """Send a streaming chat completion request and return the full content string.
+
+        Uses stream=True so that long-running LLM responses don't hit read timeouts
+        on the first chunk.  All chunks are collected and returned as one string.
+        """
         logger.debug(
-            "chat: model={!r} system_prompt_len={} user_prompt_len={}",
+            "chat: model={!r} system_prompt_len={} user_prompt_len={} timeout={}s",
             self.model,
             len(system_prompt),
             len(user_prompt),
+            "∞" if self._timeout == 0 else self._timeout,
         )
         self._ensure_client()
         assert self.client is not None
         try:
-            response = await self.client.chat.completions.create(
+            chunks: list[str] = []
+            stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.3,
+                stream=True,
             )
-            content = response.choices[0].message.content or ""
-            logger.debug("chat: response_len={}", len(content))
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    chunks.append(delta)
+            content = "".join(chunks)
+            logger.debug("chat: stream complete response_len={}", len(content))
             return content
         except Exception:
             logger.exception("chat: request failed (model={!r})", self.model)

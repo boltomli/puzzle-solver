@@ -51,13 +51,28 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
         min_lines=3,
     )
 
+    timeout_field = ft.TextField(
+        label="请求超时（秒，0 表示不超时）",
+        value=str(config.get("timeout", 300)),
+        hint_text="300",
+        keyboard_type=ft.KeyboardType.NUMBER,
+        width=220,
+    )
+
     # --- Helper: collect config from fields ---
     def _collect_config() -> dict:
+        try:
+            timeout_val = int(timeout_field.value.strip() or "300")
+            if timeout_val < 0:
+                timeout_val = 300
+        except ValueError:
+            timeout_val = 300
         return {
             "api_base_url": base_url_field.value.strip(),
             "api_key": api_key_field.value.strip(),
             "model": model_field.value.strip(),
             "system_prompt_override": system_prompt_field.value.strip(),
+            "timeout": timeout_val,
         }
 
     # --- Helper: show snack bar ---
@@ -207,6 +222,7 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
                     model_field,
                     load_models_button,
                     system_prompt_field,
+                    timeout_field,
                     ft.Row(
                         controls=[save_button, test_button],
                         spacing=15,

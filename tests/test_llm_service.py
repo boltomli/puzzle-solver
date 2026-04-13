@@ -139,7 +139,7 @@ class TestEnsureClient:
             mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
             llm = LLMService()
             llm._ensure_client()
-            mock_build.assert_called_once_with("http://lmac:1234/v1")
+            mock_build.assert_called_once_with("http://lmac:1234/v1", 300.0)
 
     def test_public_url_uses_system_proxy(self, tmp_path, monkeypatch):
         """Public base_url should use the default httpx client (system proxy)."""
@@ -158,7 +158,47 @@ class TestEnsureClient:
             mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
             llm = LLMService()
             llm._ensure_client()
-            mock_build.assert_called_once_with("https://api.openai.com/v1")
+            mock_build.assert_called_once_with("https://api.openai.com/v1", 300.0)
+
+    def test_custom_timeout_passed_to_http_client(self, tmp_path, monkeypatch):
+        """Custom timeout in config should be forwarded to _build_http_client."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://localhost:11434/v1",
+                "api_key": "",
+                "model": "llama3",
+                "timeout": 600,
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        with patch("src.services.llm_service._build_http_client") as mock_build:
+            mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
+            llm = LLMService()
+            llm._ensure_client()
+            mock_build.assert_called_once_with("http://localhost:11434/v1", 600.0)
+
+    def test_zero_timeout_means_no_timeout(self, tmp_path, monkeypatch):
+        """timeout=0 in config means no timeout (passed as 0.0)."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://localhost:11434/v1",
+                "api_key": "",
+                "model": "llama3",
+                "timeout": 0,
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        with patch("src.services.llm_service._build_http_client") as mock_build:
+            mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
+            llm = LLMService()
+            llm._ensure_client()
+            mock_build.assert_called_once_with("http://localhost:11434/v1", 0.0)
 
 
 class TestListModels:
@@ -221,3 +261,150 @@ class TestListModels:
 
         result = await llm.list_models()
         assert result == []
+
+
+class TestBuildHttpClient:
+    """Tests for _build_http_client timeout behaviour."""
+
+    def test_default_timeout_creates_timeout_object(self):
+        """Default timeout (300s) should produce an httpx.Timeout with read=300."""
+        import httpx
+        from src.services.llm_service import _build_http_client
+
+        client = _build_http_client("https://api.openai.com/v1", 300.0)
+        assert isinstance(client.timeout, httpx.Timeout)
+        assert client.timeout.read == 300.0
+
+    def test_zero_timeout_means_none(self):
+        """timeout=0 should produce httpx.Timeout(None) — no timeout at all."""
+        import httpx
+        from src.services.llm_service import _build_http_client
+
+        client = _build_http_client("http://localhost:11434/v1", 0.0)
+        assert isinstance(client.timeout, httpx.Timeout)
+        # httpx.Timeout(None) stores None for all fields
+        assert client.timeout.read is None
+
+    def test_custom_timeout_value(self):
+        """Custom timeout should be reflected in the client's timeout.read."""
+        import httpx
+        from src.services.llm_service import _build_http_client
+
+        client = _build_http_client("https://api.openai.com/v1", 900.0)
+        assert isinstance(client.timeout, httpx.Timeout)
+        assert client.timeout.read == 900.0
+
+
+class TestChatStream:
+    """Tests for the streaming chat() method."""
+
+    @pytest.mark.asyncio
+    async def test_chat_collects_stream_chunks(self, tmp_path, monkeypatch):
+        """chat() should collect all streamed chunks into one string."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://localhost:11434/v1",
+                "api_key": "",
+                "model": "llama3",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        # Build fake ChatCompletionChunk-like objects
+        def _make_chunk(text: str | None):
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = text
+            return chunk
+
+        fake_chunks = [
+            _make_chunk('{"status"'),
+            _make_chunk(': "ok"'),
+            _make_chunk("}"),
+            _make_chunk(None),  # trailing None should be ignored
+        ]
+
+        # create(..., stream=True) is awaited and returns an async-iterable object
+        class FakeAsyncStream:
+            def __aiter__(self):
+                return self._gen()
+
+            async def _gen(self):
+                for c in fake_chunks:
+                    yield c
+
+        async def fake_create(*args, **kwargs):
+            return FakeAsyncStream()
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+        llm.client.chat.completions.create = fake_create
+
+        result = await llm.chat("sys", "user")
+        assert result == '{"status": "ok"}'
+
+    @pytest.mark.asyncio
+    async def test_chat_returns_empty_string_when_no_content(self, tmp_path, monkeypatch):
+        """chat() should return '' when all chunks have None content."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://localhost:11434/v1",
+                "api_key": "",
+                "model": "llama3",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        def _make_chunk(text: str | None):
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = text
+            return chunk
+
+        class FakeAsyncStream:
+            def __aiter__(self):
+                return self._gen()
+
+            async def _gen(self):
+                yield _make_chunk(None)
+
+        async def fake_create(*args, **kwargs):
+            return FakeAsyncStream()
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+        llm.client.chat.completions.create = fake_create
+
+        result = await llm.chat("sys", "user")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_chat_propagates_exception(self, tmp_path, monkeypatch):
+        """chat() should re-raise exceptions raised by create()."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://localhost:11434/v1",
+                "api_key": "",
+                "model": "llama3",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        async def broken_create(*args, **kwargs):
+            raise ConnectionError("stream broken")
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+        llm.client.chat.completions.create = broken_create
+
+        with pytest.raises(ConnectionError, match="stream broken"):
+            await llm.chat("sys", "user")
