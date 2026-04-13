@@ -1,16 +1,63 @@
 name: Release
 
+# Triggered by pushing a version tag, e.g. v1.2.3
 on:
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: write   # needed to create/update GitHub Releases
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
+  # ── Step 1: run the full test suite first ─────────────────────────────────
+  test:
+    name: Test (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Python 3.13
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run test suite
+        run: uv run pytest tests/ -v
+
+  # ── Step 2: build native desktop executable per platform ──────────────────
+  build:
+    name: Build (${{ matrix.os }})
+    needs: test          # only build if tests pass
+    strategy:
+      fail-fast: false   # keep building other platforms even if one fails
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: PuzzleSolver-windows
+            # flet pack produces dist/PuzzleSolver/ directory on Windows
+            dist_path: dist/PuzzleSolver
+            archive_name: PuzzleSolver-windows.zip
+
+          - os: macos-latest
+            artifact_name: PuzzleSolver-macos
+            # flet pack produces dist/PuzzleSolver.app on macOS
+            dist_path: dist/PuzzleSolver.app
+            archive_name: PuzzleSolver-macos.zip
+
+          - os: ubuntu-latest
+            artifact_name: PuzzleSolver-linux
+            # flet pack produces dist/PuzzleSolver/ directory on Linux
+            dist_path: dist/PuzzleSolver
+            archive_name: PuzzleSolver-linux.tar.gz
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -20,26 +67,66 @@ jobs:
         with:
           version: "latest"
 
-      - name: Set up Python
+      - name: Install Python 3.13
         run: uv python install 3.13
 
       - name: Install dependencies
         run: uv sync
 
-      - name: Install PyInstaller
-        run: uv pip install pyinstaller
+      # Linux: flet pack needs GTK/GLib headers and a virtual display
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            xvfb
 
-      - name: Build executable
-        run: uv run python build.py
+      - name: Build desktop executable
+        run: uv run python build.py --name PuzzleSolver
 
-      - name: Upload build artifact
+      # ── Archive the build output ──────────────────────────────────────────
+
+      - name: Archive build output (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "${{ matrix.dist_path }}" -DestinationPath "${{ matrix.archive_name }}"
+
+      - name: Archive build output (macOS)
+        if: runner.os == 'macOS'
+        run: zip -r "${{ matrix.archive_name }}" "${{ matrix.dist_path }}"
+
+      - name: Archive build output (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "${{ matrix.archive_name }}" -C dist PuzzleSolver
+
+      # ── Upload as workflow artifact (visible in Actions UI) ───────────────
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PuzzleSolver-windows
-          path: dist/PuzzleSolver.exe
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+          retention-days: 30
 
-      - name: Create GitHub Release
+  # ── Step 3: collect all archives and publish the GitHub Release ───────────
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List downloaded artifacts
+        run: find artifacts/ -type f | sort
+
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/PuzzleSolver.exe
+          files: artifacts/**/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
