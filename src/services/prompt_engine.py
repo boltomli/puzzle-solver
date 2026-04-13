@@ -174,9 +174,6 @@ class PromptEngine:
         filter_char_ids_set: set[str] = set(
             (focus_filter or {}).get("character_ids") or []
         )
-        filter_loc_ids_set: set[str] = set(
-            (focus_filter or {}).get("location_ids") or []
-        )
         filter_time_slots_set: set[str] = set(
             (focus_filter or {}).get("time_slots") or []
         )

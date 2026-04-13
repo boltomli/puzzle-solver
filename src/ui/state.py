@@ -340,16 +340,23 @@ class AppState:
         """Remove a fact by ID. Returns True if found and removed."""
         if not self.current_project:
             raise ValueError("No project loaded")
-        original_len = len(self.current_project.facts)
+        removed_fact = None
+        for f in self.current_project.facts:
+            if f.id == fact_id:
+                removed_fact = f
+                break
+        if removed_fact is None:
+            logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
+            return False
         self.current_project.facts = [
             f for f in self.current_project.facts if f.id != fact_id
         ]
-        if len(self.current_project.facts) < original_len:
-            self.save()
-            logger.info("AppState.remove_fact: removed id={!r}", fact_id)
-            return True
-        logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
-        return False
+        self._fact_index.discard(
+            (removed_fact.character_id, removed_fact.location_id, removed_fact.time_slot)
+        )
+        self.save()
+        logger.info("AppState.remove_fact: removed id={!r}", fact_id)
+        return True
 
     # --- Time slot management ---
 

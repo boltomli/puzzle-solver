@@ -1,4 +1,4 @@
-# Library — Puzzle Solver Flet Rewrite
+# Library — Puzzle Solver Matrix Enhancement
 
 ## Flet Patterns for This Project
 
@@ -44,31 +44,15 @@ def show_confirm_dialog(page, title, message, on_confirm):
 
 ### State Refresh Pattern
 ```python
-# After any app_state mutation, rebuild the affected content:
 def refresh():
     content_container.content = build_content()
     page.update()
 
-# Example:
 def on_add_character(e):
     app_state.add_character(name=name_field.value)
     page.snack_bar = ft.SnackBar(ft.Text("角色已添加"))
     page.snack_bar.open = True
     refresh()
-```
-
-### Async Operations
-```python
-async def run_analysis(e):
-    progress = ft.ProgressRing()
-    content.controls.append(progress)
-    page.update()
-    try:
-        result = await service.analyze_script(proj, script)
-        # handle result
-    finally:
-        content.controls.remove(progress)
-        page.update()
 ```
 
 ### Color-Coded Cells in DataTable
@@ -90,13 +74,32 @@ def make_cell(value, status):
     )
 ```
 
-### OpenAI SDK — List Models (unchanged)
+### Chip Multi-Select Pattern
 ```python
-async def list_models(self) -> list[str]:
-    self._ensure_client()
-    assert self.client is not None
-    models = await self.client.models.list()
-    return sorted([m.id for m in models.data])
+def build_chip_selector(items, on_change):
+    """Build a row of selectable chips for multi-select."""
+    selected_ids = set()
+
+    def make_select_handler(item_id):
+        def handler(e):
+            if e.control.selected:
+                selected_ids.add(item_id)
+            else:
+                selected_ids.discard(item_id)
+            on_change(selected_ids)
+        return handler
+
+    return ft.Row(
+        controls=[
+            ft.Chip(
+                label=ft.Text(item.name),
+                selected=False,
+                on_select=make_select_handler(item.id),
+            )
+            for item in items
+        ],
+        wrap=True,
+    )
 ```
 
 ## Pure Logic Functions (MUST PRESERVE)
@@ -104,6 +107,10 @@ async def list_models(self) -> list[str]:
 ### build_matrix_data (matrix.py)
 Tested by test_matrix.py — 11 tests. Must have identical signature:
 `def build_matrix_data(project: Project) -> list[dict]`
+
+### build_location_time_data (matrix.py) — NEW
+Same pattern but rows=locations, cells=character names.
+`def build_location_time_data(project: Project) -> list[dict]`
 
 ### _create_single_deduction (scripts.py)
 Tested by test_scripts.py. Must have identical signature:
@@ -116,3 +123,37 @@ Tested by test_scripts.py. Must have identical signature:
 ### _is_api_configured (scripts.py)
 Tested by test_scripts.py. Must have identical signature:
 `def _is_api_configured() -> bool`
+
+## Deduction Index Pattern
+
+```python
+# In AppState.__init__:
+self._fact_index: set[tuple[str, str, str]] = set()
+self._pending_index: set[tuple[str, str, str]] = set()
+self._rejection_index: set[tuple[str, str, str]] = set()
+
+# Rebuild from project data:
+def _rebuild_indexes(self):
+    proj = self.current_project
+    if not proj:
+        self._fact_index = set()
+        self._pending_index = set()
+        self._rejection_index = set()
+        return
+    self._fact_index = {(f.character_id, f.location_id, f.time_slot) for f in proj.facts}
+    self._pending_index = {
+        (d.character_id, d.location_id, d.time_slot)
+        for d in proj.deductions if d.status == DeductionStatus.pending
+    }
+    self._rejection_index = {(r.character_id, r.location_id, r.time_slot) for r in proj.rejections}
+
+# In add_deduction:
+def add_deduction(self, deduction) -> bool:
+    key = (deduction.character_id, deduction.location_id, deduction.time_slot)
+    if key in self._fact_index or key in self._pending_index or key in self._rejection_index:
+        return False
+    self.current_project.deductions.append(deduction)
+    self._pending_index.add(key)
+    self.save()
+    return True
+```
