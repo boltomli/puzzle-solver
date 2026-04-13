@@ -7,6 +7,7 @@ and tabbed navigation for the five app sections.
 import flet as ft
 
 from src.ui.pages.manage import build_manage_tab
+from src.ui.pages.matrix import build_matrix_tab
 from src.ui.pages.scripts import build_scripts_tab
 from src.ui.pages.settings import build_settings_tab
 from src.ui.state import app_state
@@ -88,7 +89,7 @@ def main(page: ft.Page):
         return build_scripts_tab(page)
 
     def matrix_content():
-        return ft.Text("推理矩阵 — 待实现", size=20)
+        return build_matrix_tab(page)
 
     def manage_content():
         return build_manage_tab(page)
