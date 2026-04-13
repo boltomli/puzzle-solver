@@ -292,7 +292,7 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
                     ],
                     spacing=8,
                 ),
-                border=ft.border.all(1, ft.Colors.RED),
+                border=ft.Border.all(1, ft.Colors.RED),
                 border_radius=10,
                 padding=20,
                 width=700,

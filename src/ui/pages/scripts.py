@@ -182,7 +182,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     ],
                     spacing=10,
                 ),
-                border=ft.border.all(1, ft.Colors.AMBER),
+                border=ft.Border.all(1, ft.Colors.AMBER),
                 border_radius=8,
                 padding=12,
                 bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.AMBER),
@@ -292,7 +292,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=8,
                 ),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 padding=40,
             )
         )
@@ -424,7 +424,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                                         controls=expanded_controls,
                                         spacing=8,
                                     ),
-                                    padding=ft.padding.only(left=16, right=16, bottom=16),
+                                    padding=ft.Padding.only(left=16, right=16, bottom=16),
                                 )
                             ],
                         ),
@@ -527,7 +527,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text("新发现", size=11, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.ORANGE,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
             if context:
@@ -582,7 +582,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text("新发现", size=11, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.ORANGE,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
             if context:
@@ -640,7 +640,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text(ts, size=12, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.BLUE,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
             row_controls.append(ft.Text(ref, size=13))
@@ -650,7 +650,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text("明确", size=11, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.GREEN,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
             if is_new_ts:
@@ -659,7 +659,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text("新发现", size=11, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.ORANGE,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
 
@@ -764,7 +764,7 @@ def _show_analysis_results_dialog(
                         content=ft.Text(ts, size=12, color=ft.Colors.WHITE),
                         bgcolor=ft.Colors.BLUE,
                         border_radius=4,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     )
                 )
             fact_row_controls.append(
@@ -772,7 +772,7 @@ def _show_analysis_results_dialog(
                     content=ft.Text(conf, size=11, color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.GREY,
                     border_radius=4,
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                 )
             )
 

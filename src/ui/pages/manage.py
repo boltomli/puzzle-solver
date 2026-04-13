@@ -77,10 +77,10 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     ],
                     spacing=6,
                 ),
-                border=ft.border.all(1, ft.Colors.BLUE_200),
+                border=ft.Border.all(1, ft.Colors.BLUE_200),
                 border_radius=10,
                 padding=20,
-                margin=ft.margin.only(bottom=15),
+                margin=ft.Margin.only(bottom=15),
             )
         )
 
@@ -180,7 +180,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 ],
                 spacing=12,
             ),
-            padding=ft.padding.only(left=15, right=15, bottom=15),
+            padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
 
@@ -344,7 +344,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text(_status_label(c.status), size=11, color=ft.Colors.WHITE),
                 bgcolor=_status_color(c.status),
                 border_radius=10,
-                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             )
 
             card = ft.Card(
@@ -390,7 +390,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         header=ft.ListTile(title=ft.Text("👤 人物管理")),
         content=ft.Container(
             content=ft.Column(controls=char_controls, spacing=8),
-            padding=ft.padding.only(left=15, right=15, bottom=15),
+            padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
 
@@ -560,7 +560,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         header=ft.ListTile(title=ft.Text("📍 地点管理")),
         content=ft.Container(
             content=ft.Column(controls=loc_controls, spacing=8),
-            padding=ft.padding.only(left=15, right=15, bottom=15),
+            padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
 
@@ -656,7 +656,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text(_hint_type_label(h.type), size=11, color=ft.Colors.WHITE),
                 bgcolor=_hint_type_color(h.type),
                 border_radius=10,
-                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             )
 
             card = ft.Card(
@@ -689,7 +689,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         header=ft.ListTile(title=ft.Text("📋 游戏规则")),
         content=ft.Container(
             content=ft.Column(controls=hint_controls, spacing=8),
-            padding=ft.padding.only(left=15, right=15, bottom=15),
+            padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
 
@@ -829,21 +829,23 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text(f.time_slot, size=11, color=ft.Colors.WHITE),
                 bgcolor=ft.Colors.BLUE,
                 border_radius=10,
-                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             )
             source_badge = ft.Container(
                 content=ft.Text(source_label, size=11, color=ft.Colors.WHITE),
                 bgcolor=ft.Colors.GREY,
                 border_radius=10,
-                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             )
 
             evidence_controls: list[ft.Control] = []
             if f.source_evidence:
                 evidence_controls.append(
-                    ft.Tooltip(
-                        message=f.source_evidence,
-                        content=ft.Icon(ft.Icons.INFO_OUTLINE, size=18, color=ft.Colors.GREY),
+                    ft.Icon(
+                        ft.Icons.INFO_OUTLINE,
+                        size=18,
+                        color=ft.Colors.GREY,
+                        tooltip=f.source_evidence,
                     )
                 )
 
@@ -884,6 +886,6 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 controls=[*form_controls, *fact_controls],
                 spacing=8,
             ),
-            padding=ft.padding.only(left=15, right=15, bottom=15),
+            padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )

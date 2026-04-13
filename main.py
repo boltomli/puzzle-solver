@@ -31,6 +31,6 @@ if __name__ == "__main__":
     ).lower() in ("1", "true", "yes")
 
     if web_mode:
-        ft.app(target=app_main, view=ft.AppView.WEB_BROWSER, port=8080)
+        ft.run(app_main, view=ft.AppView.WEB_BROWSER, port=8080)
     else:
-        ft.app(target=app_main)
+        ft.run(app_main)

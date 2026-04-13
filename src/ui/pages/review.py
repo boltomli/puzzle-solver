@@ -111,7 +111,7 @@ def build_review_tab(page: ft.Page) -> ft.Control:
                         spacing=8,
                     ),
                     padding=30,
-                    alignment=ft.alignment.center,
+                    alignment=ft.Alignment.CENTER,
                 ),
             )
         )
@@ -158,7 +158,7 @@ def build_review_tab(page: ft.Page) -> ft.Control:
                 ),
                 bgcolor=conf_color,
                 border_radius=12,
-                padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                padding=ft.Padding.symmetric(horizontal=10, vertical=4),
             )
 
             # Header row
@@ -372,7 +372,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
                     ),
                     bgcolor=status_color,
                     border_radius=12,
-                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=2),
                 ),
                 ft.Container(
                     content=ft.Text(
@@ -382,7 +382,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
                     ),
                     bgcolor=conf_color,
                     border_radius=12,
-                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=2),
                 ),
             ],
             spacing=8,
@@ -486,7 +486,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
         title=ft.Text("📜 推断历史"),
         leading=ft.Icon(ft.Icons.HISTORY),
         controls=history_items,
-        initially_expanded=False,
+        expanded=False,
     )
 
 

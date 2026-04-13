@@ -160,7 +160,7 @@ def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=10,
             ),
-            alignment=ft.alignment.center,
+            alignment=ft.Alignment.CENTER,
             expand=True,
             padding=40,
         )
@@ -244,7 +244,7 @@ def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=10,
         ),
-        alignment=ft.alignment.center,
+        alignment=ft.Alignment.CENTER,
         expand=True,
         padding=40,
     )
@@ -275,7 +275,7 @@ def _build_project_view(
         label="切换项目",
         value=current_id,
         options=project_options,
-        on_change=on_project_change,
+        on_select=on_project_change,
         width=220,
         dense=True,
         text_size=14,
@@ -310,17 +310,28 @@ def _build_project_view(
         page.update()
 
     # --- Tabs ---
-    tabs_control = ft.Tabs(
-        content=[
+    tab_bar = ft.TabBar(
+        tabs=[
             ft.Tab(label="剧本", icon=ft.Icons.DESCRIPTION),
             ft.Tab(label="矩阵", icon=ft.Icons.GRID_ON),
             ft.Tab(label="管理", icon=ft.Icons.PEOPLE),
             ft.Tab(label="审查", icon=ft.Icons.FACT_CHECK),
             ft.Tab(label="设置", icon=ft.Icons.SETTINGS),
         ],
+    )
+
+    tabs_control = ft.Tabs(
         length=5,
         selected_index=0,
         on_change=on_tab_change,
+        content=ft.Column(
+            expand=True,
+            controls=[
+                tab_bar,
+                tab_content_area,
+            ],
+            spacing=0,
+        ),
     )
 
     # --- AppBar ---
@@ -359,7 +370,6 @@ def _build_project_view(
         controls=[
             appbar,
             tabs_control,
-            tab_content_area,
         ],
         expand=True,
         spacing=0,

@@ -152,7 +152,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     ],
                     spacing=10,
                 ),
-                border=ft.border.all(1, ft.Colors.AMBER),
+                border=ft.Border.all(1, ft.Colors.AMBER),
                 border_radius=8,
                 padding=12,
                 bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.AMBER),
@@ -180,7 +180,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=8,
                 ),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 padding=40,
             )
         )
@@ -330,7 +330,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         data_table = ft.DataTable(
             columns=dt_columns,
             rows=dt_rows,
-            border=ft.border.all(1, ft.Colors.OUTLINE),
+            border=ft.Border.all(1, ft.Colors.OUTLINE),
             border_radius=8,
             heading_row_color=ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
             column_spacing=20,
@@ -376,7 +376,7 @@ def _make_cell(value: str, status: str) -> ft.DataCell:
                 weight=ft.FontWeight.BOLD if status == "confirmed" else None,
             ),
             bgcolor=bg,
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             border_radius=4,
         )
     )
