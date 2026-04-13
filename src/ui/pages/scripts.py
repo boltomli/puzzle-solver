@@ -95,7 +95,7 @@ def scripts_tab_content():
                     # Auto-trigger script analysis on empty project
                     if project_is_empty:
                         if _is_api_configured():
-                            await _run_script_analysis(script.id)
+                            await _run_script_analysis(script.id, on_complete=script_list.refresh)
                         else:
                             ui.notify(
                                 "请先在设置页面配置 API，以启用自动剧本分析",
@@ -165,7 +165,7 @@ def scripts_tab_content():
 
                                 def make_analyze_handler(s_id):
                                     async def handler():
-                                        await _run_script_analysis(s_id)
+                                        await _run_script_analysis(s_id, on_complete=script_list.refresh)
                                     return handler
 
                                 def make_view_results_handler(s_proj, s_result, s_id):
@@ -247,7 +247,7 @@ def scripts_tab_content():
         script_list()
 
 
-async def _run_script_analysis(script_id: str):
+async def _run_script_analysis(script_id: str, on_complete=None):
     """Run AI analysis on a specific script and show results."""
     proj = app_state.current_project
     if not proj:
@@ -267,7 +267,11 @@ async def _run_script_analysis(script_id: str):
         result = await service.analyze_script(proj, script)
 
         app_state.save_script_analysis(script_id, result)  # Cache it
-        script_list.refresh()  # Refresh to show the "view results" button
+        if on_complete:
+            try:
+                on_complete()
+            except Exception:
+                pass
         _show_analysis_results_dialog(proj, result, script_id)
     except ValueError as e:
         ui.notify(str(e), type="negative")
