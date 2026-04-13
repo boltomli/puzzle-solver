@@ -17,7 +17,11 @@ from src.ui.pages.settings import settings_tab_content
 
 
 def _show_create_project_dialog():
-    """Show a dialog for creating a new project."""
+    """Show a dialog for creating a new project.
+
+    Simplified: only name and optional description.
+    Time slots will be extracted automatically by AI from scripts.
+    """
     with ui.dialog() as dialog, ui.card().classes("w-96"):
         ui.label("新建项目").classes("text-h6 q-mb-md")
 
@@ -31,10 +35,9 @@ def _show_create_project_dialog():
             placeholder="简短描述此项目",
         ).classes("w-full")
 
-        time_input = ui.input(
-            label="时间段（可选，逗号分隔）",
-            placeholder="14:00,15:00,16:00",
-        ).classes("w-full")
+        ui.label("💡 创建后请前往「剧本」页面添加剧本，AI 将自动提取人物、地点和时间段").classes(
+            "text-caption text-grey q-mt-sm"
+        )
 
         error_label = ui.label("").classes("text-negative")
 
@@ -44,20 +47,9 @@ def _show_create_project_dialog():
                 error_label.text = "项目名称不能为空"
                 return
 
-            time_slots = []
-            if time_input.value.strip():
-                raw_slots = [s.strip() for s in time_input.value.split(",") if s.strip()]
-                import re
-                for ts in raw_slots:
-                    if not re.match(r"^\d{2}:\d{2}$", ts):
-                        error_label.text = f"时间格式错误: '{ts}'，请使用 HH:MM 格式"
-                        return
-                time_slots = raw_slots
-
             app_state.create_project(
                 name=name,
                 description=desc_input.value.strip() or None,
-                time_slots=time_slots,
             )
             ui.notify(f"项目 '{name}' 已创建", type="positive")
             dialog.close()
@@ -203,11 +195,15 @@ def create_app():
     def _render_project_view(dark=None):
         """Render the tabbed project view."""
         # Tab navigation
+        pending_count = len(app_state.get_pending_deductions())
+
         with ui.tabs().classes("w-full") as tabs:
             ui.tab("scripts", label="剧本", icon="description")
             ui.tab("matrix", label="矩阵", icon="grid_on")
             ui.tab("manage", label="管理", icon="people")
-            ui.tab("review", label="审查", icon="fact_check")
+            with ui.tab("review", label="审查", icon="fact_check"):
+                if pending_count > 0:
+                    ui.badge(str(pending_count), color="red").props("floating")
             ui.tab("settings", label="设置", icon="settings")
 
         # Tab panels

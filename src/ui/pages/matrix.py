@@ -12,10 +12,17 @@ from src.models.puzzle import (
     Project,
     SourceType,
 )
+from src.services.config import load_config
 from src.ui.state import app_state
 
 # Module-level transient storage for contradictions (reset on each AI deduction)
 _last_contradictions: list[dict] = []
+
+
+def _is_api_configured() -> bool:
+    """Check if API is configured for AI features."""
+    config = load_config()
+    return bool(config.get("api_base_url") and config.get("model"))
 
 
 def build_matrix_data(project: Project) -> list[dict]:
@@ -88,6 +95,20 @@ def matrix_tab_content():
         if not app_state.current_project:
             ui.label("请先选择或创建一个项目").classes("text-body1 text-grey")
             return
+
+        # API not configured banner (A3.3)
+        if not _is_api_configured():
+            with ui.card().classes("w-full q-pa-sm").style(
+                "border: 1px solid #ff9800; background-color: rgba(255, 152, 0, 0.08);"
+            ):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("warning", color="warning")
+                    ui.label("API 未配置，AI 推断功能暂不可用。").classes(
+                        "text-body2"
+                    )
+                    ui.label("请前往「设置」页面配置 API。").classes(
+                        "text-body2 text-weight-bold"
+                    )
 
         proj = app_state.current_project
 

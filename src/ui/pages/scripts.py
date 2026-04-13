@@ -24,6 +24,20 @@ def scripts_tab_content():
     with ui.column().classes("w-full q-pa-md gap-4"):
         ui.label("剧本管理").classes("text-h5")
 
+        # API not configured banner (A3.3)
+        if not _is_api_configured():
+            with ui.card().classes("w-full q-pa-sm").style(
+                "border: 1px solid #ff9800; background-color: rgba(255, 152, 0, 0.08);"
+            ):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("warning", color="warning")
+                    ui.label("API 未配置，AI 功能（自动分析、推断）暂不可用。").classes(
+                        "text-body2"
+                    )
+                    ui.label("请前往「设置」页面配置 API。").classes(
+                        "text-body2 text-weight-bold"
+                    )
+
         # --- Add Script Section ---
         with ui.card().classes("w-full"):
             with ui.card_section():
@@ -418,6 +432,17 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
 
         if not chars_mentioned and not locs_mentioned and not time_refs and not direct_facts:
             ui.label("未提取到有效信息").classes("text-body1 text-grey")
+
+        # Post-analysis navigation hint (A3.5)
+        if direct_facts:
+            ui.separator().classes("q-my-sm")
+            with ui.row().classes("items-center gap-2 q-pa-sm").style(
+                "background-color: rgba(33, 150, 243, 0.08); border-radius: 4px;"
+            ):
+                ui.icon("lightbulb", color="primary")
+                ui.label(
+                    "💡 提示：请前往「审查」标签页确认 AI 提取的推断结果"
+                ).classes("text-body2 text-primary")
 
         with ui.row().classes("w-full justify-end q-mt-md"):
             ui.button("关闭", on_click=dlg.close).props("flat")

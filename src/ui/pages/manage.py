@@ -27,13 +27,14 @@ def manage_tab_content():
                 "border: 1px dashed #64b5f6; background-color: rgba(100, 181, 246, 0.05);"
             ):
                 ui.label("🚀 快速开始").classes("text-h6 q-mb-sm")
-                ui.label("按以下顺序设置您的推理项目：").classes("text-body1 q-mb-sm")
+                ui.label(
+                    "推荐先在「剧本」页面添加剧本，AI 将自动提取人物、地点和时间段。"
+                ).classes("text-body1 q-mb-sm")
                 with ui.column().classes("gap-1"):
-                    ui.label("1️⃣ 添加时间段 — 剧本中涉及的时间点（如 14:00, 15:00）").classes("text-body2")
-                    ui.label("2️⃣ 添加人物 — 游戏中出现的角色").classes("text-body2")
-                    ui.label("3️⃣ 添加地点 — 故事发生的地点").classes("text-body2")
-                    ui.label("4️⃣ 录入规则 — 游戏的特殊规则和约束").classes("text-body2")
-                    ui.label("5️⃣ 添加事实 — 您已确认的人物-地点-时间关系").classes("text-body2")
+                    ui.label("1️⃣ 前往「剧本」页面 — 粘贴剧本文本并保存").classes("text-body2")
+                    ui.label("2️⃣ AI 自动分析 — 提取人物、地点、时间段和事实").classes("text-body2")
+                    ui.label("3️⃣ 审核结果 — 在「审查」页面确认 AI 提取的推断").classes("text-body2")
+                    ui.label("4️⃣ 手动补充 — 在此页面管理和微调实体信息").classes("text-body2")
 
         # --- 4a: Time Slots ---
         _time_slots_section()
