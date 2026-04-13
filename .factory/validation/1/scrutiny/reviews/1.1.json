@@ -1,0 +1,7 @@
+{
+  "featureId": "1.1",
+  "status": "pass",
+  "issues": [],
+  "summary": "tests/test_e2e.py exists, imports under pytest, and includes the required foundational fixtures and smoke tests for Emma/草坪/15:00 analysis data.",
+  "sharedStateObservations": []
+}

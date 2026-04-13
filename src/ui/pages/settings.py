@@ -1,171 +1,313 @@
-"""设置页面 — Settings tab.
+"""设置页面 — Settings tab (Flet version).
 
 API configuration: base URL, key, model, system prompt override.
-Project management: delete project.
+Model list loading with selection dialog.
+Project management: delete project (danger zone).
 """
 
-from nicegui import ui
+import flet as ft
 
 from src.services.config import load_config, save_config
 from src.ui.state import app_state
 
 
-def settings_tab_content():
-    """Render the settings tab content."""
+def build_settings_tab(page: ft.Page) -> ft.Control:
+    """Build and return the settings tab control tree.
+
+    Provides:
+    - API configuration form (base URL, API key, model, system prompt)
+    - Save, test connection, and load models buttons
+    - Danger zone: delete current project with two-step confirmation
+    """
     config = load_config()
 
-    with ui.column().classes("w-full q-pa-md gap-4"):
-        ui.label("设置").classes("text-h5")
+    # --- API configuration fields ---
+    base_url_field = ft.TextField(
+        label="API Base URL",
+        value=config.get("api_base_url", ""),
+        hint_text="https://api.openai.com/v1",
+    )
 
-        with ui.card().classes("w-full max-w-2xl"):
-            with ui.card_section():
-                ui.label("API 配置").classes("text-h6")
-                ui.label("配置用于 AI 推理的 OpenAI 兼容 API").classes(
-                    "text-body2 text-grey"
+    api_key_field = ft.TextField(
+        label="API Key（部分服务商可留空）",
+        value=config.get("api_key", ""),
+        hint_text="sk-...（Ollama 等本地服务可留空）",
+        password=True,
+        can_reveal_password=True,
+    )
+
+    model_field = ft.TextField(
+        label="模型名称",
+        value=config.get("model", ""),
+        hint_text="gpt-4o / deepseek-chat / llama3",
+    )
+
+    system_prompt_field = ft.TextField(
+        label="自定义系统提示词（可选）",
+        value=config.get("system_prompt_override", ""),
+        hint_text="覆盖默认的系统提示词。留空则使用内置提示词。",
+        multiline=True,
+        min_lines=3,
+    )
+
+    # --- Helper: collect config from fields ---
+    def _collect_config() -> dict:
+        return {
+            "api_base_url": base_url_field.value.strip(),
+            "api_key": api_key_field.value.strip(),
+            "model": model_field.value.strip(),
+            "system_prompt_override": system_prompt_field.value.strip(),
+        }
+
+    # --- Helper: show snack bar ---
+    def _show_snackbar(message: str, color: str | None = None):
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=color,
+        )
+        page.snack_bar.open = True
+        page.update()
+
+    # --- Save config handler ---
+    def on_save_config(e):
+        save_config(_collect_config())
+        _show_snackbar("配置已保存", ft.Colors.GREEN)
+
+    # --- Test connection handler ---
+    async def on_test_connection(e):
+        base_url = base_url_field.value.strip()
+        model = model_field.value.strip()
+        if not base_url or not model:
+            _show_snackbar("请先填写 API Base URL 和模型名称", ft.Colors.AMBER)
+            return
+
+        # Save config first so LLMService can read it
+        save_config(_collect_config())
+        _show_snackbar("正在测试连接...")
+
+        try:
+            from src.services.llm_service import LLMService
+
+            llm = LLMService()
+            reply = await llm.test_connection()
+            _show_snackbar(f"连接成功！模型响应: {reply}", ft.Colors.GREEN)
+        except Exception as exc:
+            _show_snackbar(f"连接失败: {str(exc)[:200]}", ft.Colors.RED)
+
+    # --- Load models handler ---
+    async def on_load_models(e):
+        base_url = base_url_field.value.strip()
+        if not base_url:
+            _show_snackbar("请先填写 API Base URL", ft.Colors.AMBER)
+            return
+
+        # Save config first so LLMService can read it
+        save_config(_collect_config())
+        _show_snackbar("正在加载模型列表...")
+
+        try:
+            from src.services.llm_service import LLMService
+
+            llm = LLMService()
+            models = await llm.list_models()
+
+            if not models:
+                _show_snackbar("未发现可用模型", ft.Colors.AMBER)
+                return
+
+            # Build model selection dialog
+            def make_model_select_handler(model_name: str):
+                def handler(e):
+                    model_field.value = model_name
+                    dlg.open = False
+                    page.update()
+
+                return handler
+
+            model_tiles = [
+                ft.ListTile(
+                    title=ft.Text(m),
+                    on_click=make_model_select_handler(m),
                 )
+                for m in models
+            ]
 
-            with ui.card_section():
-                base_url_input = ui.input(
-                    label="API Base URL",
-                    value=config.get("api_base_url", ""),
-                    placeholder="https://api.openai.com/v1",
-                ).classes("w-full")
+            def close_dialog(e):
+                dlg.open = False
+                page.update()
 
-                api_key_input = ui.input(
-                    label="API Key",
-                    value=config.get("api_key", ""),
-                    placeholder="sk-...",
-                    password=True,
-                    password_toggle_button=True,
-                ).classes("w-full")
+            dlg = ft.AlertDialog(
+                title=ft.Text("选择模型"),
+                content=ft.Container(
+                    content=ft.Column(
+                        controls=model_tiles,
+                        scroll=ft.ScrollMode.AUTO,
+                    ),
+                    height=400,
+                    width=360,
+                ),
+                actions=[ft.TextButton("取消", on_click=close_dialog)],
+            )
+            page.overlay.append(dlg)
+            dlg.open = True
+            page.update()
 
-                model_input = ui.input(
-                    label="模型名称",
-                    value=config.get("model", ""),
-                    placeholder="gpt-4",
-                ).classes("w-full")
+            _show_snackbar(f"已加载 {len(models)} 个模型", ft.Colors.GREEN)
 
-                prompt_input = ui.textarea(
-                    label="自定义系统提示词（可选）",
-                    value=config.get("system_prompt_override", ""),
-                    placeholder="覆盖默认的系统提示词。留空则使用内置提示词。",
-                ).classes("w-full").props("rows=5")
+        except Exception as exc:
+            _show_snackbar(f"加载模型失败: {str(exc)[:200]}", ft.Colors.RED)
 
-            with ui.card_section():
-                with ui.row().classes("gap-4"):
-                    def do_save():
-                        new_config = {
-                            "api_base_url": base_url_input.value.strip(),
-                            "api_key": api_key_input.value.strip(),
-                            "model": model_input.value.strip(),
-                            "system_prompt_override": prompt_input.value.strip(),
-                        }
-                        save_config(new_config)
-                        ui.notify("配置已保存", type="positive")
+    # --- Action buttons ---
+    save_button = ft.ElevatedButton(
+        "保存配置",
+        icon=ft.Icons.SAVE,
+        on_click=on_save_config,
+    )
 
-                    ui.button("保存配置", on_click=do_save, icon="save").props(
-                        "color=primary"
-                    )
+    test_button = ft.ElevatedButton(
+        "测试连接",
+        icon=ft.Icons.WIFI,
+        on_click=on_test_connection,
+    )
 
-                    async def do_test():
-                        base_url = base_url_input.value.strip()
-                        api_key = api_key_input.value.strip()
-                        model = model_input.value.strip()
+    load_models_button = ft.ElevatedButton(
+        "加载模型列表",
+        icon=ft.Icons.REFRESH,
+        on_click=on_load_models,
+    )
 
-                        if not base_url or not api_key or not model:
-                            ui.notify(
-                                "请先填写 API Base URL、API Key 和模型名称",
-                                type="warning",
-                            )
-                            return
+    # --- API config card ---
+    api_config_card = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("API 配置", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        "配置用于 AI 推理的 OpenAI 兼容 API",
+                        color=ft.Colors.GREY,
+                        size=13,
+                    ),
+                    ft.Divider(),
+                    base_url_field,
+                    api_key_field,
+                    model_field,
+                    load_models_button,
+                    system_prompt_field,
+                    ft.Row(
+                        controls=[save_button, test_button],
+                        spacing=15,
+                    ),
+                ],
+                spacing=12,
+            ),
+            padding=20,
+            width=700,
+        ),
+    )
 
-                        # Save config first so LLMService can read it
-                        temp_config = {
-                            "api_base_url": base_url,
-                            "api_key": api_key,
-                            "model": model,
-                            "system_prompt_override": prompt_input.value.strip(),
-                        }
-                        save_config(temp_config)
+    # --- Danger zone (only if a project is loaded) ---
+    danger_zone_controls: list[ft.Control] = []
 
-                        spinner = ui.spinner("dots", size="lg", color="primary")
-                        ui.notify("正在测试连接...", type="info")
-                        try:
-                            from src.services.llm_service import LLMService
+    if app_state.current_project:
+        proj_name = app_state.current_project.name
+        proj_id = app_state.current_project.id
 
-                            llm = LLMService()
-                            reply = await llm.test_connection()
-                            ui.notify(
-                                f"连接成功！模型响应: {reply}",
-                                type="positive",
-                            )
-                        except Exception as e:
-                            ui.notify(
-                                f"连接失败: {str(e)[:200]}",
-                                type="negative",
-                                timeout=10000,
-                            )
-                        finally:
-                            spinner.delete()
+        def on_delete_project(e):
+            """Show two-step deletion confirmation dialog."""
+            confirm_input = ft.TextField(
+                label=f"请输入项目名称「{proj_name}」以确认",
+                hint_text=proj_name,
+            )
+            error_label = ft.Text("", color=ft.Colors.RED)
 
-                    ui.button("测试连接", on_click=do_test, icon="wifi").props(
-                        "outline"
-                    )
+            def do_delete(e):
+                if confirm_input.value.strip() != proj_name:
+                    error_label.value = "项目名称不匹配，请重新输入"
+                    page.update()
+                    return
+                app_state.delete_project(proj_id)
+                dlg.open = False
+                page.update()
+                _show_snackbar(f"项目「{proj_name}」已删除", ft.Colors.GREEN)
 
-        # --- Project Danger Zone ---
-        if app_state.current_project:
-            ui.separator().classes("q-my-lg")
-            with ui.card().classes("w-full max-w-2xl").style(
-                "border: 1px solid #ff5252;"
-            ):
-                with ui.card_section():
-                    ui.label("⚠️ 危险操作").classes("text-h6 text-negative")
-                    ui.label("以下操作不可撤销，请谨慎操作").classes(
-                        "text-body2 text-grey"
-                    )
+            def close_dlg(e):
+                dlg.open = False
+                page.update()
 
-                with ui.card_section():
-                    proj_name = app_state.current_project.name
+            dlg = ft.AlertDialog(
+                title=ft.Text("⚠️ 确认删除项目", color=ft.Colors.RED),
+                content=ft.Column(
+                    controls=[
+                        ft.Text(f"您确定要永久删除项目「{proj_name}」吗？"),
+                        ft.Text(
+                            "此操作将删除所有人物、地点、剧本、事实和推断数据，且无法恢复。",
+                            color=ft.Colors.RED,
+                            size=13,
+                        ),
+                        confirm_input,
+                        error_label,
+                    ],
+                    tight=True,
+                    spacing=10,
+                ),
+                actions=[
+                    ft.TextButton("取消", on_click=close_dlg),
+                    ft.ElevatedButton(
+                        "永久删除",
+                        icon=ft.Icons.DELETE_FOREVER,
+                        color=ft.Colors.WHITE,
+                        bgcolor=ft.Colors.RED,
+                        on_click=do_delete,
+                    ),
+                ],
+            )
+            page.overlay.append(dlg)
+            dlg.open = True
+            page.update()
 
-                    def confirm_delete_project():
-                        """Show a strong confirmation dialog for project deletion."""
-                        with ui.dialog() as dlg, ui.card().classes("w-96"):
-                            ui.label("⚠️ 确认删除项目").classes("text-h6 text-negative q-mb-md")
-                            ui.label(
-                                f"您确定要永久删除项目「{proj_name}」吗？"
-                            ).classes("text-body1 q-mb-sm")
-                            ui.label(
-                                "此操作将删除所有人物、地点、剧本、事实和推断数据，且无法恢复。"
-                            ).classes("text-body2 text-negative q-mb-md")
+        danger_zone_controls = [
+            ft.Divider(height=30),
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            "⚠️ 危险操作",
+                            size=20,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.RED,
+                        ),
+                        ft.Text(
+                            "以下操作不可撤销，请谨慎操作",
+                            color=ft.Colors.GREY,
+                            size=13,
+                        ),
+                        ft.Container(height=10),
+                        ft.ElevatedButton(
+                            "删除此项目",
+                            icon=ft.Icons.DELETE_FOREVER,
+                            color=ft.Colors.WHITE,
+                            bgcolor=ft.Colors.RED,
+                            on_click=on_delete_project,
+                        ),
+                    ],
+                    spacing=8,
+                ),
+                border=ft.Border.all(1, ft.Colors.RED),
+                border_radius=10,
+                padding=20,
+                width=700,
+            ),
+        ]
 
-                            confirm_input = ui.input(
-                                label=f'请输入项目名称「{proj_name}」以确认',
-                                placeholder=proj_name,
-                            ).classes("w-full")
-
-                            error_label = ui.label("").classes("text-negative")
-
-                            def do_delete():
-                                if confirm_input.value.strip() != proj_name:
-                                    error_label.text = "项目名称不匹配，请重新输入"
-                                    return
-                                proj_id = app_state.current_project.id
-                                app_state.delete_project(proj_id)
-                                ui.notify(f"项目「{proj_name}」已删除", type="positive")
-                                dlg.close()
-
-                            with ui.row().classes("w-full justify-end q-mt-md"):
-                                ui.button("取消", on_click=dlg.close).props("flat")
-                                ui.button(
-                                    "永久删除",
-                                    on_click=do_delete,
-                                    icon="delete_forever",
-                                ).props("color=negative")
-
-                        dlg.open()
-
-                    ui.button(
-                        "删除此项目",
-                        on_click=confirm_delete_project,
-                        icon="delete_forever",
-                    ).props("color=negative outline")
+    # --- Assemble the full settings page ---
+    return ft.Column(
+        controls=[
+            ft.Text("设置", size=28, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            api_config_card,
+            *danger_zone_controls,
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        spacing=10,
+        expand=True,
+    )

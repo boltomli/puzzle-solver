@@ -1,0 +1,104 @@
+{
+  "surface": "pytest",
+  "milestone": "1",
+  "status": "pass",
+  "assertions": [
+    {
+      "id": "E2E-001",
+      "status": "pass",
+      "evidence": "tests/test_e2e.py exists and pytest collected 16 tests successfully."
+    },
+    {
+      "id": "E2E-002",
+      "status": "pass",
+      "evidence": "Fixtures temp_data_dir, state, and mock_analysis_result are defined in tests/test_e2e.py and fixture smoke tests passed."
+    },
+    {
+      "id": "E2E-003",
+      "status": "pass",
+      "evidence": "mock_analysis_result contains Emma, 草坪, 15:00, direct_facts, and alias_candidates as verified by fixture test and source inspection."
+    },
+    {
+      "id": "E2E-004",
+      "status": "pass",
+      "evidence": "TestCoreE2EFlow::test_full_script_to_matrix_flow passed, covering project creation through matrix verification."
+    },
+    {
+      "id": "E2E-005",
+      "status": "pass",
+      "evidence": "TestCoreE2EFlow::test_script_analysis_to_deduction_flow passed, verifying _create_single_deduction creates a pending deduction."
+    },
+    {
+      "id": "E2E-006",
+      "status": "pass",
+      "evidence": "TestCoreE2EFlow::test_persistence_across_reload passed, verifying save/load persistence."
+    },
+    {
+      "id": "E2E-007",
+      "status": "pass",
+      "evidence": "TestCascadeE2E::test_cascade_after_filling_two_of_three passed, confirming cascade deduction in 3x3 setup."
+    },
+    {
+      "id": "E2E-008",
+      "status": "pass",
+      "evidence": "TestCascadeE2E::test_cascade_no_result_with_ambiguity passed, confirming no deduction when ambiguity remains."
+    },
+    {
+      "id": "E2E-009",
+      "status": "pass",
+      "evidence": "TestAcceptRejectE2E::test_accept_deduction_creates_fact passed, confirming Fact creation with source_type=ai_deduction and pending cleared."
+    },
+    {
+      "id": "E2E-010",
+      "status": "pass",
+      "evidence": "TestAcceptRejectE2E::test_reject_deduction_creates_rejection passed, confirming rejection record creation and rejected status."
+    },
+    {
+      "id": "E2E-011",
+      "status": "pass",
+      "evidence": "TestCharacterCRUDE2E::test_character_full_lifecycle passed, covering add/update/persist/remove."
+    },
+    {
+      "id": "E2E-012",
+      "status": "pass",
+      "evidence": "TestLocationCRUDE2E::test_location_full_lifecycle passed, covering add/update/remove."
+    },
+    {
+      "id": "E2E-013",
+      "status": "pass",
+      "evidence": "TestTimeSlotE2E::test_time_slot_add_sort_remove passed, covering sort, duplicate rejection, invalid format, and removal."
+    },
+    {
+      "id": "E2E-014",
+      "status": "pass",
+      "evidence": "TestHintE2E::test_hint_add_and_remove passed, covering rule/hint add/remove behavior."
+    },
+    {
+      "id": "E2E-015",
+      "status": "pass",
+      "evidence": "TestManualFactE2E::test_manual_fact_entry_and_deletion passed, covering matrix verification and deletion."
+    }
+  ],
+  "commandsRun": [
+    {
+      "command": "C:\\exp\\puzzle-solver\\.venv\\Scripts\\python.exe -m pytest C:\\exp\\puzzle-solver\\tests\\test_e2e.py -v",
+      "exitCode": 0,
+      "observation": "Pytest collected 16 tests in tests/test_e2e.py and all 16 passed in about 1.22s."
+    },
+    {
+      "command": "C:\\exp\\puzzle-solver\\.venv\\Scripts\\python.exe -m pytest C:\\exp\\puzzle-solver\\tests\\test_e2e.py -q",
+      "exitCode": 0,
+      "observation": "Quiet rerun also passed with 16 passed in about 1.23s, confirming deterministic success."
+    }
+  ],
+  "toolsUsed": [
+    "Read",
+    "Execute"
+  ],
+  "frictions": [
+    {
+      "description": "Task-based flow validator subagent could not proceed due to permission mode, so validation was executed directly in the worker session."
+    }
+  ],
+  "blockers": []
+}

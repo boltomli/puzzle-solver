@@ -1,0 +1,7 @@
+{
+  "featureId": "1.2",
+  "status": "pass",
+  "issues": [],
+  "summary": "The full-flow E2E tests cover project creation, script analysis persistence, entity addition, deduction creation through _create_single_deduction, and reload persistence, matching milestone-1 assertions.",
+  "sharedStateObservations": []
+}

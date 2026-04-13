@@ -1,11 +1,12 @@
-"""App state management — singleton that holds the current project and provides reactive updates.
+"""App state management — singleton that holds the current project.
 
-All UI mutations go through AppState methods which handle persistence and notification.
+All UI mutations go through AppState methods which handle persistence.
+The Flet UI layer will call page.update() directly after state changes.
 """
 
 import re
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Optional
 
 from src.models.puzzle import (
     Character,
@@ -26,33 +27,17 @@ from src.storage.json_store import JsonStore
 
 
 class AppState:
-    """Manages the currently loaded project and provides reactive state."""
+    """Manages the currently loaded project and provides state access."""
 
     def __init__(self, store: JsonStore | None = None):
         self.store = store or JsonStore()
         self.current_project: Optional[Project] = None
-        self._on_change_callbacks: list[Callable] = []
-
-    # --- Reactive notification ---
-
-    def on_change(self, callback: Callable) -> None:
-        """Register a callback to be called when state changes."""
-        self._on_change_callbacks.append(callback)
-
-    def _notify(self) -> None:
-        """Notify all registered callbacks of a state change."""
-        for cb in self._on_change_callbacks:
-            try:
-                cb()
-            except Exception:
-                pass  # Don't let a bad callback break the chain
 
     # --- Project management ---
 
     def load_project(self, project_id: str) -> None:
         """Load a project by ID and set it as the current project."""
         self.current_project = self.store.load_project(project_id)
-        self._notify()
 
     def save(self) -> None:
         """Save the current project to disk."""
@@ -73,7 +58,6 @@ class AppState:
             time_slots=time_slots or [],
         )
         self.current_project = project
-        self._notify()
         return project
 
     def delete_project(self, project_id: str) -> None:
@@ -81,7 +65,6 @@ class AppState:
         self.store.delete_project(project_id)
         if self.current_project and self.current_project.id == project_id:
             self.current_project = None
-        self._notify()
 
     def list_projects(self):
         """List all available projects as summaries."""
@@ -107,7 +90,6 @@ class AppState:
         )
         self.current_project.characters.append(char)
         self.save()
-        self._notify()
         return char
 
     def update_character(
@@ -132,7 +114,6 @@ class AppState:
                 if status is not None:
                     char.status = status
                 self.save()
-                self._notify()
                 return char
         return None
 
@@ -146,7 +127,6 @@ class AppState:
         ]
         if len(self.current_project.characters) < original_len:
             self.save()
-            self._notify()
             return True
         return False
 
@@ -168,7 +148,6 @@ class AppState:
         )
         self.current_project.locations.append(loc)
         self.save()
-        self._notify()
         return loc
 
     def update_location(
@@ -190,7 +169,6 @@ class AppState:
                 if description is not None:
                     loc.description = description
                 self.save()
-                self._notify()
                 return loc
         return None
 
@@ -204,7 +182,6 @@ class AppState:
         ]
         if len(self.current_project.locations) < original_len:
             self.save()
-            self._notify()
             return True
         return False
 
@@ -234,7 +211,6 @@ class AppState:
         )
         self.current_project.scripts.append(script)
         self.save()
-        self._notify()
         return script
 
     def update_script(
@@ -256,9 +232,19 @@ class AppState:
                 if user_notes is not None:
                     script.metadata.user_notes = user_notes
                 self.save()
-                self._notify()
                 return script
         return None
+
+    def save_script_analysis(self, script_id: str, result: dict) -> bool:
+        """Save analysis result to a script. Returns True if saved."""
+        if not self.current_project:
+            return False
+        for script in self.current_project.scripts:
+            if script.id == script_id:
+                script.analysis_result = result
+                self.save()
+                return True
+        return False
 
     def remove_script(self, script_id: str) -> bool:
         """Remove a script by ID. Returns True if found and removed."""
@@ -270,7 +256,6 @@ class AppState:
         ]
         if len(self.current_project.scripts) < original_len:
             self.save()
-            self._notify()
             return True
         return False
 
@@ -298,7 +283,6 @@ class AppState:
         )
         self.current_project.facts.append(fact)
         self.save()
-        self._notify()
         return fact
 
     def remove_fact(self, fact_id: str) -> bool:
@@ -311,7 +295,6 @@ class AppState:
         ]
         if len(self.current_project.facts) < original_len:
             self.save()
-            self._notify()
             return True
         return False
 
@@ -328,7 +311,6 @@ class AppState:
         self.current_project.time_slots.append(time_slot)
         self.current_project.time_slots.sort()
         self.save()
-        self._notify()
         return True
 
     def remove_time_slot(self, time_slot: str) -> bool:
@@ -338,7 +320,6 @@ class AppState:
         if time_slot in self.current_project.time_slots:
             self.current_project.time_slots.remove(time_slot)
             self.save()
-            self._notify()
             return True
         return False
 
@@ -355,7 +336,6 @@ class AppState:
         hint = Hint(type=hint_type, content=content)
         self.current_project.hints.append(hint)
         self.save()
-        self._notify()
         return hint
 
     def remove_hint(self, hint_id: str) -> bool:
@@ -368,7 +348,6 @@ class AppState:
         ]
         if len(self.current_project.hints) < original_len:
             self.save()
-            self._notify()
             return True
         return False
 
@@ -380,7 +359,6 @@ class AppState:
             raise ValueError("No project loaded")
         self.current_project.deductions.append(deduction)
         self.save()
-        self._notify()
         return deduction
 
     def accept_deduction(self, deduction_id: str) -> Fact | None:
@@ -411,7 +389,6 @@ class AppState:
         )
         self.current_project.facts.append(fact)
         self.save()
-        self._notify()
         return fact
 
     def reject_deduction(self, deduction_id: str, reason: str = "") -> Rejection | None:
@@ -440,7 +417,6 @@ class AppState:
         )
         self.current_project.rejections.append(rejection)
         self.save()
-        self._notify()
         return rejection
 
     def get_pending_deductions(self) -> list[Deduction]:
@@ -464,7 +440,6 @@ class AppState:
         removed = original_len - len(self.current_project.deductions)
         if removed > 0:
             self.save()
-            self._notify()
         return removed
 
 

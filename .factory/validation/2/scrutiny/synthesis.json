@@ -1,0 +1,61 @@
+{
+  "milestone": "2",
+  "round": 2,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cmd /c \"cd /d C:\\exp\\puzzle-solver && .venv\\Scripts\\python -m pytest tests\\ -v\"",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cmd /c \"cd /d C:\\exp\\puzzle-solver && .venv\\Scripts\\python -m compileall src main.py tests\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": false,
+      "command": "Grep pattern `nicegui` under `src/`",
+      "exitCode": 1,
+      "note": "Legacy NiceGUI imports remain in milestone-3 page files: src/ui/pages/scripts.py, src/ui/pages/review.py, src/ui/pages/matrix.py."
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 2,
+    "failed": 2,
+    "failedFeatures": [
+      "2.2",
+      "2.3"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "2.2",
+      "severity": "blocking",
+      "description": "src/ui/app.py wires Manage and Settings page builders from later features instead of keeping all five tab builders as placeholder stub controls, violating the feature-2.2 contract boundary."
+    },
+    {
+      "featureId": "2.3",
+      "severity": "blocking",
+      "description": "src/ui/pages/settings.py deletes the current project but does not trigger app-level rebuild/navigation, leaving the UI able to show stale controls for a deleted project."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
+    {
+      "observation": "The reviewer instructions say to read `.factory/library/architecture.md`, but this repository's `.factory/library/` only contains `patterns.md` and `user-testing.md`.",
+      "reason": "ambiguous"
+    },
+    {
+      "observation": "Mission guidance should more strongly reinforce not pulling in later-feature integrations when validating intermediate milestone slices.",
+      "reason": "recommendation belongs to orchestrator but evidence is limited to a single feature and not clearly systemic"
+    },
+    {
+      "observation": "Reviewer instructions expect repo-local skill files for review work, but the repo does not contain `.factory/skills/scrutiny-feature-reviewer/`.",
+      "reason": "already-known mission tooling gap outside repository guidance scope"
+    }
+  ],
+  "previousRound": ".factory/validation/2/scrutiny/synthesis.json"
+}

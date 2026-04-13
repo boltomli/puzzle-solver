@@ -5,6 +5,7 @@ to produce deduction candidates for user review.
 """
 
 import json
+import re
 
 from src.models.puzzle import (
     ConfidenceLevel,
@@ -14,6 +15,36 @@ from src.models.puzzle import (
 )
 from src.services.llm_service import LLMService
 from src.services.prompt_engine import PromptEngine
+
+
+def _extract_json(raw: str) -> dict:
+    """Extract and parse JSON from LLM response that may contain markdown fencing."""
+    text = raw.strip()
+
+    # 1. Try direct parse
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 2. Try extracting from markdown code block
+    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1).strip())
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 3. Try finding first { to last }
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    if first_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(text[first_brace:last_brace + 1])
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    raise ValueError(f"无法从 AI 响应中提取有效 JSON。响应内容: {text[:200]}")
 
 
 class DeductionService:
@@ -30,7 +61,7 @@ class DeductionService:
         """
         system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(project)
         raw = await self.llm.chat(system_prompt, user_prompt)
-        return json.loads(raw)
+        return _extract_json(raw)
 
     async def analyze_script(self, project: Project, script: Script) -> dict:
         """Run a lightweight script analysis.
@@ -41,7 +72,7 @@ class DeductionService:
             project, script
         )
         raw = await self.llm.chat(system_prompt, user_prompt)
-        return json.loads(raw)
+        return _extract_json(raw)
 
     @staticmethod
     def run_cascade(project: Project) -> list[Deduction]:

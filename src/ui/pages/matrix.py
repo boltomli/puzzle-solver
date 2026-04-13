@@ -1,10 +1,10 @@
-"""推理矩阵页面 — Matrix tab.
+"""推理矩阵页面 — Matrix tab (Flet version).
 
 Displays a time × character matrix table showing where each character was at each time slot.
-Supports quick-add facts from cells, AI deduction triggers, and cascade elimination.
+Supports AI deduction triggers, cascade elimination, and statistics.
 """
 
-from nicegui import ui
+import flet as ft
 
 from src.models.puzzle import (
     Deduction,
@@ -12,10 +12,19 @@ from src.models.puzzle import (
     Project,
     SourceType,
 )
+from src.services.config import load_config
 from src.ui.state import app_state
 
-# Module-level transient storage for contradictions (reset on each AI deduction)
-_last_contradictions: list[dict] = []
+
+# ---------------------------------------------------------------------------
+# Pure logic helper — tested by tests/test_matrix.py
+# ---------------------------------------------------------------------------
+
+
+def _is_api_configured() -> bool:
+    """Check if API is configured for AI features."""
+    config = load_config()
+    return bool(config.get("api_base_url") and config.get("model"))
 
 
 def build_matrix_data(project: Project) -> list[dict]:
@@ -78,372 +87,314 @@ def build_matrix_data(project: Project) -> list[dict]:
     return rows
 
 
-def matrix_tab_content():
-    """Render the reasoning matrix tab content."""
-    global _last_contradictions
+# ---------------------------------------------------------------------------
+# Flet UI builder
+# ---------------------------------------------------------------------------
 
-    with ui.column().classes("w-full q-pa-md gap-4"):
-        ui.label("推理矩阵").classes("text-h5")
 
-        if not app_state.current_project:
-            ui.label("请先选择或创建一个项目").classes("text-body1 text-grey")
-            return
+def build_matrix_tab(page: ft.Page) -> ft.Control:
+    """Build and return the matrix tab control tree.
 
-        proj = app_state.current_project
+    Contains:
+    - API not configured banner (when applicable)
+    - Matrix DataTable with color-coded cells
+    - AI deduction and cascade buttons
+    - Statistics panel
+    """
+    outer_container = ft.Container(expand=True)
 
-        if not proj.characters or not proj.time_slots:
-            with ui.card().classes("w-full q-pa-lg text-center"):
-                ui.icon("grid_on", size="3em", color="grey")
-                ui.label("请先在「管理」页面添加人物和时间段").classes(
-                    "text-body1 text-grey q-mt-sm"
+    def _show_snackbar(message: str, color: str | None = None):
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=color,
+        )
+        page.snack_bar.open = True
+        page.update()
+
+    def refresh():
+        """Rebuild the matrix tab content after state changes."""
+        outer_container.content = _build_content(page, refresh, _show_snackbar)
+        page.update()
+
+    outer_container.content = _build_content(page, refresh, _show_snackbar)
+    return ft.Column(
+        controls=[
+            ft.Text("推理矩阵", size=28, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            outer_container,
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        spacing=10,
+        expand=True,
+    )
+
+
+def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
+    """Build the full matrix page content."""
+    if not app_state.current_project:
+        return ft.Text("请先选择或创建一个项目", color=ft.Colors.GREY, size=16)
+
+    proj = app_state.current_project
+    controls: list[ft.Control] = []
+
+    # --- API not configured banner ---
+    if not _is_api_configured():
+        controls.append(
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.AMBER),
+                        ft.Text(
+                            "API 未配置，AI 推断功能暂不可用。请前往「设置」页面配置 API。",
+                            size=14,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                    ],
+                    spacing=10,
+                ),
+                border=ft.Border.all(1, ft.Colors.AMBER),
+                border_radius=8,
+                padding=12,
+                bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.AMBER),
+            )
+        )
+
+    # --- Empty state ---
+    if not proj.characters or not proj.time_slots:
+        controls.append(
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Icon(ft.Icons.GRID_ON, size=48, color=ft.Colors.GREY),
+                        ft.Text(
+                            "请先在「管理」页面添加人物和时间段",
+                            size=16,
+                            color=ft.Colors.GREY,
+                        ),
+                        ft.Text(
+                            "矩阵需要至少一个人物和一个时间段才能显示",
+                            size=13,
+                            color=ft.Colors.GREY,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
+                ),
+                alignment=ft.Alignment.CENTER,
+                padding=40,
+            )
+        )
+        return ft.Column(controls=controls, spacing=12)
+
+    # --- Action buttons ---
+    api_ok = _is_api_configured()
+
+    async def run_ai_deduction(e):
+        """Trigger a full AI deduction pass."""
+        progress = ft.ProgressRing(width=24, height=24)
+        controls.insert(0, progress)
+        page.update()
+        try:
+            from src.services.deduction import DeductionService
+
+            service = DeductionService()
+            show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
+            result = await service.run_deduction(proj)
+            deductions_data = result.get("deductions", [])
+            count = 0
+            for d_data in deductions_data:
+                ded = Deduction(
+                    character_id=d_data.get("character_id", ""),
+                    location_id=d_data.get("location_id", ""),
+                    time_slot=d_data.get("time_slot", "00:00"),
+                    confidence=d_data.get("confidence", "medium"),
+                    reasoning=d_data.get("reasoning", ""),
+                    supporting_script_ids=d_data.get(
+                        "supporting_script_ids", []
+                    ),
+                    depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
                 )
-                ui.label("矩阵需要至少一个人物和一个时间段才能显示").classes(
-                    "text-caption text-grey"
+                app_state.add_deduction(ded)
+                count += 1
+
+            contradictions = result.get("contradictions_detected", [])
+            new_chars = result.get("new_characters_detected", [])
+            new_locs = result.get("new_locations_detected", [])
+
+            msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
+            if contradictions:
+                msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
+            if new_chars:
+                msg_parts.append(f"🆕 发现 {len(new_chars)} 个新人物")
+            if new_locs:
+                msg_parts.append(f"🆕 发现 {len(new_locs)} 个新地点")
+            show_snackbar("；".join(msg_parts), ft.Colors.GREEN)
+            refresh()
+        except ValueError as exc:
+            show_snackbar(str(exc), ft.Colors.RED)
+        except Exception as exc:
+            show_snackbar(f"AI 推断失败: {str(exc)[:200]}", ft.Colors.RED)
+        finally:
+            try:
+                controls.remove(progress)
+                page.update()
+            except (ValueError, Exception):
+                pass
+
+    def run_cascade_deduction(e):
+        """Trigger local elimination-based cascade."""
+        try:
+            from src.services.deduction import DeductionService
+
+            new_deds = DeductionService.run_cascade(proj)
+            count = 0
+            for ded in new_deds:
+                # Avoid duplicating existing pending deductions
+                already_exists = any(
+                    d.character_id == ded.character_id
+                    and d.location_id == ded.location_id
+                    and d.time_slot == ded.time_slot
+                    and d.status == DeductionStatus.pending
+                    for d in proj.deductions
                 )
-            return
+                if not already_exists:
+                    app_state.add_deduction(ded)
+                    count += 1
+            if count > 0:
+                show_snackbar(
+                    f"消元推断完成：新增 {count} 条确定推断",
+                    ft.Colors.GREEN,
+                )
+            else:
+                show_snackbar("消元推断未发现新的确定推断", ft.Colors.BLUE)
+            refresh()
+        except Exception as exc:
+            show_snackbar(f"消元推断失败: {str(exc)[:200]}", ft.Colors.RED)
 
-        # --- Action buttons ---
-        with ui.row().classes("gap-2 items-center"):
+    ai_button = ft.ElevatedButton(
+        "🤖 AI 推断",
+        icon=ft.Icons.PSYCHOLOGY,
+        on_click=run_ai_deduction if api_ok else None,
+        disabled=not api_ok,
+        tooltip=None if api_ok else "请先在设置页面配置 API",
+    )
+    cascade_button = ft.OutlinedButton(
+        "🔄 消元推断",
+        icon=ft.Icons.AUTO_FIX_HIGH,
+        on_click=run_cascade_deduction,
+    )
 
-            async def run_ai_deduction():
-                """Trigger a full AI deduction pass."""
-                global _last_contradictions
-                spinner = ui.spinner("dots", size="lg", color="primary")
-                try:
-                    from src.services.deduction import DeductionService
+    controls.append(
+        ft.Row(
+            controls=[ai_button, cascade_button],
+            spacing=10,
+        )
+    )
 
-                    service = DeductionService()
-                    ui.notify("🤖 正在进行 AI 推断...", type="info")
-                    result = await service.run_deduction(proj)
-                    deductions_data = result.get("deductions", [])
-                    count = 0
-                    for d_data in deductions_data:
-                        ded = Deduction(
-                            character_id=d_data.get("character_id", ""),
-                            location_id=d_data.get("location_id", ""),
-                            time_slot=d_data.get("time_slot", "00:00"),
-                            confidence=d_data.get("confidence", "medium"),
-                            reasoning=d_data.get("reasoning", ""),
-                            supporting_script_ids=d_data.get(
-                                "supporting_script_ids", []
-                            ),
-                            depends_on_fact_ids=d_data.get(
-                                "depends_on_fact_ids", []
-                            ),
-                        )
-                        app_state.add_deduction(ded)
-                        count += 1
-
-                    notes = result.get("notes", "")
-                    contradictions = result.get("contradictions_detected", [])
-                    new_chars = result.get("new_characters_detected", [])
-                    new_locs = result.get("new_locations_detected", [])
-
-                    # Store contradictions for display
-                    _last_contradictions = contradictions or []
-
-                    msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
-                    if contradictions:
-                        msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
-                    if new_chars:
-                        msg_parts.append(f"🆕 发现 {len(new_chars)} 个新人物")
-                    if new_locs:
-                        msg_parts.append(f"🆕 发现 {len(new_locs)} 个新地点")
-                    ui.notify("；".join(msg_parts), type="positive")
-
-                    # Show new entity discovery dialog
-                    if new_chars or new_locs:
-                        _show_new_entities_dialog(proj, new_chars, new_locs)
-
-                    matrix_content.refresh()
-                except ValueError as e:
-                    ui.notify(str(e), type="negative")
-                except Exception as e:
-                    ui.notify(f"AI 推断失败: {str(e)[:200]}", type="negative", timeout=10000)
-                finally:
-                    spinner.delete()
-
-            def run_cascade_deduction():
-                """Trigger local elimination-based cascade."""
-                try:
-                    from src.services.deduction import DeductionService
-
-                    new_deds = DeductionService.run_cascade(proj)
-                    count = 0
-                    for ded in new_deds:
-                        # Avoid duplicating existing pending deductions
-                        already_exists = any(
-                            d.character_id == ded.character_id
-                            and d.location_id == ded.location_id
-                            and d.time_slot == ded.time_slot
-                            and d.status == DeductionStatus.pending
-                            for d in proj.deductions
-                        )
-                        if not already_exists:
-                            app_state.add_deduction(ded)
-                            count += 1
-                    if count > 0:
-                        ui.notify(
-                            f"消元推断完成：新增 {count} 条确定推断",
-                            type="positive",
-                        )
-                    else:
-                        ui.notify("消元推断未发现新的确定推断", type="info")
-                    matrix_content.refresh()
-                except Exception as e:
-                    ui.notify(f"消元推断失败: {str(e)[:200]}", type="negative")
-
-            ui.button(
-                "🤖 AI 推断", on_click=run_ai_deduction
-            ).props("color=primary")
-            ui.button(
-                "🔄 消元推断", on_click=run_cascade_deduction
-            ).props("color=secondary")
-
-        # --- Matrix content (refreshable) ---
-        @ui.refreshable
-        def matrix_content():
-            # Show contradictions card if any
-            if _last_contradictions:
-                _render_contradictions(_last_contradictions)
-            _render_matrix(proj)
-
-        matrix_content()
-
-
-def _render_contradictions(contradictions: list[dict]):
-    """Render a prominent contradiction warning card."""
-    with ui.card().classes("w-full q-mb-md").style(
-        "border: 2px solid #ff5252; background-color: rgba(255, 82, 82, 0.08);"
-    ):
-        with ui.card_section():
-            with ui.row().classes("items-center gap-2"):
-                ui.label("⚠️").classes("text-h5")
-                ui.label("检测到矛盾").classes("text-h6 text-negative")
-                ui.badge(
-                    f"{len(contradictions)} 个", color="negative"
-                ).classes("text-body2")
-
-        with ui.card_section():
-            for i, c in enumerate(contradictions, 1):
-                desc = c.get("description", "未知矛盾")
-                with ui.row().classes("items-start gap-2 q-mb-sm"):
-                    ui.label(f"{i}.").classes("text-weight-bold text-negative")
-                    with ui.column().classes("gap-0"):
-                        ui.label(desc).classes("text-body1")
-                        refs = []
-                        involved_facts = c.get("involved_fact_ids", [])
-                        involved_scripts = c.get("involved_script_ids", [])
-                        if involved_facts:
-                            refs.append(f"涉及 {len(involved_facts)} 条事实")
-                        if involved_scripts:
-                            refs.append(f"涉及 {len(involved_scripts)} 个剧本")
-                        if refs:
-                            ui.label("、".join(refs)).classes("text-caption text-grey")
-
-
-def _show_new_entities_dialog(
-    proj: Project,
-    new_chars: list[dict],
-    new_locs: list[dict],
-):
-    """Show a dialog listing newly discovered entities with add buttons."""
-    with ui.dialog() as dlg, ui.card().classes("w-[500px]"):
-        ui.label("🆕 发现新实体").classes("text-h6 q-mb-md")
-        ui.label("AI 在分析中发现了以下未知人物/地点：").classes("text-body2 text-grey q-mb-md")
-
-        if new_chars:
-            ui.label("新人物").classes("text-subtitle1 text-weight-bold q-mb-sm")
-            for ch in new_chars:
-                name = ch.get("name", "未知")
-                context = ch.get("context", "")
-                with ui.card().classes("w-full q-mb-sm q-pa-sm"):
-                    with ui.row().classes("w-full items-center justify-between"):
-                        with ui.column().classes("gap-0"):
-                            ui.label(f"👤 {name}").classes("text-subtitle1 text-weight-bold")
-                            if context:
-                                ui.label(context).classes("text-caption text-grey")
-
-                        def make_add_char_handler(ch_name):
-                            def handler():
-                                app_state.add_character(name=ch_name)
-                                ui.notify(f"已添加人物「{ch_name}」", type="positive")
-                            return handler
-
-                        ui.button(
-                            "添加", on_click=make_add_char_handler(name), icon="person_add"
-                        ).props("dense color=primary outline")
-
-        if new_locs:
-            ui.label("新地点").classes("text-subtitle1 text-weight-bold q-mt-md q-mb-sm")
-            for lo in new_locs:
-                name = lo.get("name", "未知")
-                context = lo.get("context", "")
-                with ui.card().classes("w-full q-mb-sm q-pa-sm"):
-                    with ui.row().classes("w-full items-center justify-between"):
-                        with ui.column().classes("gap-0"):
-                            ui.label(f"📍 {name}").classes("text-subtitle1 text-weight-bold")
-                            if context:
-                                ui.label(context).classes("text-caption text-grey")
-
-                        def make_add_loc_handler(lo_name):
-                            def handler():
-                                app_state.add_location(name=lo_name)
-                                ui.notify(f"已添加地点「{lo_name}」", type="positive")
-                            return handler
-
-                        ui.button(
-                            "添加", on_click=make_add_loc_handler(name), icon="add_location"
-                        ).props("dense color=primary outline")
-
-        with ui.row().classes("w-full justify-end q-mt-md"):
-            ui.button("关闭", on_click=dlg.close).props("flat")
-
-    dlg.open()
-
-
-def _render_matrix(proj: Project):
-    """Render the matrix table and statistics."""
+    # --- Matrix DataTable ---
     rows = build_matrix_data(proj)
 
     if not rows:
-        ui.label("暂无数据").classes("text-body1 text-grey")
-        return
+        controls.append(ft.Text("暂无数据", color=ft.Colors.GREY, size=14))
+    else:
+        # Build DataTable columns
+        dt_columns = [
+            ft.DataColumn(
+                ft.Text("人物", weight=ft.FontWeight.BOLD),
+            ),
+        ]
+        for ts in proj.time_slots:
+            dt_columns.append(
+                ft.DataColumn(
+                    ft.Text(ts, weight=ft.FontWeight.BOLD),
+                )
+            )
 
-    # Build columns definition
-    columns = [
-        {
-            "name": "character",
-            "label": "人物",
-            "field": "character",
-            "align": "left",
-            "sortable": True,
-            "headerStyle": "font-weight: bold",
-        }
-    ]
-    for ts in proj.time_slots:
-        columns.append(
-            {
-                "name": ts,
-                "label": ts,
-                "field": ts,
-                "align": "center",
-            }
+        # Build DataTable rows
+        dt_rows = []
+        for row_data in rows:
+            cells = [
+                ft.DataCell(
+                    ft.Text(
+                        row_data["character"],
+                        weight=ft.FontWeight.BOLD,
+                    )
+                ),
+            ]
+            for ts in proj.time_slots:
+                value = row_data[ts]
+                status = row_data[f"{ts}_status"]
+                cells.append(_make_cell(value, status))
+            dt_rows.append(ft.DataRow(cells=cells))
+
+        data_table = ft.DataTable(
+            columns=dt_columns,
+            rows=dt_rows,
+            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            border_radius=8,
+            heading_row_color=ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
+            column_spacing=20,
         )
 
-    table = ui.table(
-        columns=columns,
-        rows=rows,
-        row_key="id",
-    ).classes("w-full")
-
-    # Add custom slot rendering for color-coded cells
-    for ts in proj.time_slots:
-        slot_name = f"body-cell-{ts}"
-        table.add_slot(
-            slot_name,
-            f'''
-            <q-td :props="props">
-                <q-badge
-                    v-if="props.row['{ts}_status'] === 'confirmed'"
-                    color="green"
-                    text-color="white"
-                    class="text-body2 q-pa-sm cursor-pointer"
-                >
-                    {{{{ props.row['{ts}'] }}}}
-                </q-badge>
-                <q-badge
-                    v-else-if="props.row['{ts}_status'] === 'pending'"
-                    color="amber"
-                    text-color="black"
-                    class="text-body2 q-pa-sm cursor-pointer"
-                >
-                    {{{{ props.row['{ts}'] }}}}
-                </q-badge>
-                <span
-                    v-else
-                    class="text-grey cursor-pointer"
-                    @click="$parent.$emit(\'cell-click\', {{{{ JSON.stringify({{char_id: props.row.id, time_slot: \'{ts}\'}}) }}}})"
-                >
-                    —
-                </span>
-            </q-td>
-            ''',
+        controls.append(
+            ft.Container(
+                content=ft.Row(
+                    controls=[data_table],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
         )
 
-    # Handle cell click for quick-add
-    table.on(
-        "cell-click",
-        lambda e: _show_quick_add_dialog(
-            proj,
-            e.args.get("char_id", "") if isinstance(e.args, dict) else "",
-            e.args.get("time_slot", "") if isinstance(e.args, dict) else "",
-        ),
+    # --- Statistics Panel ---
+    controls.append(ft.Divider())
+    controls.append(_build_statistics(proj))
+
+    return ft.Column(controls=controls, spacing=12)
+
+
+def _make_cell(value: str, status: str) -> ft.DataCell:
+    """Create a color-coded DataCell for the matrix table."""
+    color_map = {
+        "confirmed": ft.Colors.GREEN_100,
+        "pending": ft.Colors.AMBER_100,
+        "unknown": None,
+    }
+    text_color_map = {
+        "confirmed": ft.Colors.GREEN_900,
+        "pending": ft.Colors.AMBER_900,
+        "unknown": ft.Colors.GREY,
+    }
+    bg = color_map.get(status)
+    text_color = text_color_map.get(status, ft.Colors.GREY)
+    display = value if value else "—"
+
+    return ft.DataCell(
+        ft.Container(
+            content=ft.Text(
+                display,
+                color=text_color,
+                weight=ft.FontWeight.BOLD if status == "confirmed" else None,
+            ),
+            bgcolor=bg,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            border_radius=4,
+        )
     )
 
-    # --- Statistics Summary ---
-    ui.separator().classes("q-my-md")
-    _render_statistics(proj)
 
-
-def _show_quick_add_dialog(proj: Project, char_id: str, time_slot: str):
-    """Show a dialog to quickly add a fact from a matrix cell click."""
-    if not char_id or not time_slot:
-        return
-
-    char = next((c for c in proj.characters if c.id == char_id), None)
-    if not char:
-        return
-
-    with ui.dialog() as dlg, ui.card().classes("w-96"):
-        ui.label("快速添加事实").classes("text-h6 q-mb-md")
-        ui.label(f"人物: {char.name}").classes("text-body1")
-        ui.label(f"时间: {time_slot}").classes("text-body1")
-
-        loc_options = {loc.id: loc.name for loc in proj.locations}
-        loc_select = ui.select(
-            options=loc_options,
-            label="地点 *",
-        ).classes("w-full")
-
-        evidence_input = ui.input(
-            label="证据/备注（可选）",
-            placeholder="来源说明",
-        ).classes("w-full")
-
-        def do_add():
-            if not loc_select.value:
-                ui.notify("请选择地点", type="warning")
-                return
-            app_state.add_fact(
-                character_id=char_id,
-                location_id=loc_select.value,
-                time_slot=time_slot,
-                source_type=SourceType.user_input,
-                source_evidence=evidence_input.value.strip() or None,
-            )
-            ui.notify("事实已添加", type="positive")
-            dlg.close()
-
-        with ui.row().classes("w-full justify-end q-mt-md"):
-            ui.button("取消", on_click=dlg.close).props("flat")
-            ui.button("确认", on_click=do_add).props("color=primary")
-
-    dlg.open()
-
-
-def _render_statistics(proj: Project):
-    """Render matrix fill statistics below the table."""
+def _build_statistics(proj: Project) -> ft.Control:
+    """Build the statistics panel showing matrix fill progress."""
     total_cells = len(proj.characters) * len(proj.time_slots)
     if total_cells == 0:
-        return
+        return ft.Container()
 
     confirmed = 0
     pending = 0
     for char in proj.characters:
         for ts in proj.time_slots:
             has_fact = any(
-                f.character_id == char.id and f.time_slot == ts for f in proj.facts
+                f.character_id == char.id and f.time_slot == ts
+                for f in proj.facts
             )
             has_pending = any(
                 d.character_id == char.id
@@ -459,25 +410,46 @@ def _render_statistics(proj: Project):
     unknown = total_cells - confirmed - pending
     progress = confirmed / total_cells * 100 if total_cells > 0 else 0
 
-    with ui.card().classes("w-full q-pa-md"):
-        ui.label("📊 统计").classes("text-subtitle1 text-weight-bold q-mb-sm")
-        with ui.row().classes("gap-6 flex-wrap"):
-            with ui.column().classes("items-center"):
-                ui.label(str(total_cells)).classes("text-h5")
-                ui.label("总计格数").classes("text-caption text-grey")
-            with ui.column().classes("items-center"):
-                ui.label(str(confirmed)).classes("text-h5 text-positive")
-                ui.label("已确认").classes("text-caption text-grey")
-            with ui.column().classes("items-center"):
-                ui.label(str(pending)).classes("text-h5 text-warning")
-                ui.label("待审查").classes("text-caption text-grey")
-            with ui.column().classes("items-center"):
-                ui.label(str(unknown)).classes("text-h5 text-grey")
-                ui.label("未知").classes("text-caption text-grey")
-            with ui.column().classes("items-center"):
-                ui.label(f"{progress:.0f}%").classes("text-h5 text-primary")
-                ui.label("完成度").classes("text-caption text-grey")
+    return ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "📊 统计",
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Row(
+                        controls=[
+                            _stat_item(str(total_cells), "总计格数", None),
+                            _stat_item(str(confirmed), "已确认", ft.Colors.GREEN),
+                            _stat_item(str(pending), "待审查", ft.Colors.AMBER),
+                            _stat_item(str(unknown), "未知", ft.Colors.GREY),
+                            _stat_item(f"{progress:.0f}%", "完成度", ft.Colors.BLUE),
+                        ],
+                        spacing=40,
+                        wrap=True,
+                    ),
+                    ft.ProgressBar(
+                        value=progress / 100,
+                        color=ft.Colors.BLUE,
+                        bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.BLUE),
+                    ),
+                ],
+                spacing=12,
+            ),
+            padding=20,
+        ),
+    )
 
-        ui.linear_progress(value=progress / 100).classes("q-mt-sm").props(
-            "color=primary"
-        )
+
+def _stat_item(value: str, label: str, color) -> ft.Control:
+    """Build a single statistic display item."""
+    return ft.Column(
+        controls=[
+            ft.Text(value, size=24, weight=ft.FontWeight.BOLD, color=color),
+            ft.Text(label, size=12, color=ft.Colors.GREY),
+        ],
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=2,
+    )
