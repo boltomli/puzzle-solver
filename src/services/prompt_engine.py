@@ -22,6 +22,7 @@ class PromptEngine:
         "PROBABLE deductions (most likely but not proven).\n"
         "- Never suggest a deduction that appears in the REJECTED list — those have been "
         "explicitly ruled out.\n"
+        "- 严格禁止重复已确认的事实或已被拒绝的推断。只输出全新的、未知的推断。\n"
         "- Pay close attention to GAME RULES — they define hard constraints.\n"
         "- Scripts may describe events OUT OF CHRONOLOGICAL ORDER. Use internal clues "
         "(dialogue references, time mentions, lighting, etc.) to determine actual timing.\n"
@@ -43,8 +44,21 @@ class PromptEngine:
         "Respond with a JSON object following the exact schema provided in the user message."
     )
 
-    def build_deduction_prompt(self, project: Project) -> tuple[str, str]:
+    def build_deduction_prompt(
+        self,
+        project: Project,
+        focus_filter: dict | None = None,
+    ) -> tuple[str, str]:
         """Build system + user prompt for a full deduction pass.
+
+        Args:
+            project: The project to build the prompt for.
+            focus_filter: Optional dict with optional keys:
+                - ``character_ids``: list of character IDs to focus on
+                - ``location_ids``: list of location IDs to focus on
+                - ``time_slots``: list of time slots to focus on
+                When provided, the UNFILLED SLOTS section only lists matching cells
+                and a FOCUS AREA section is added to guide the AI.
 
         Returns:
             (system_prompt, user_prompt) tuple.
@@ -55,7 +69,7 @@ class PromptEngine:
         if not system_prompt.strip():
             system_prompt = self.DEFAULT_SYSTEM_PROMPT
 
-        user_prompt = self._build_user_prompt(project)
+        user_prompt = self._build_user_prompt(project, focus_filter=focus_filter)
         return system_prompt, user_prompt
 
     def build_script_analysis_prompt(self, project: Project, script: Script) -> tuple[str, str]:
@@ -72,7 +86,7 @@ class PromptEngine:
         user_prompt = self._build_script_analysis_user_prompt(project, script)
         return system_prompt, user_prompt
 
-    def _build_user_prompt(self, project: Project) -> str:
+    def _build_user_prompt(self, project: Project, focus_filter: dict | None = None) -> str:
         """Assemble the full deduction user prompt."""
         parts: list[str] = []
 
@@ -117,7 +131,7 @@ class PromptEngine:
             parts.append(f"- ✅ **{char_name}** was at **{loc_name}** at **{fact.time_slot}**")
 
         # Rejections
-        parts.append("\n## REJECTED DEDUCTIONS (do NOT re-suggest)")
+        parts.append("\n## REJECTED DEDUCTIONS (以下推断已被用户明确拒绝，绝对不要再次建议：)")
         for rej in project.rejections:
             char = next((c for c in project.characters if c.id == rej.character_id), None)
             loc = next((l for l in project.locations if l.id == rej.location_id), None)
@@ -127,10 +141,54 @@ class PromptEngine:
                 f"- ❌ {char_name} was NOT at {loc_name} at {rej.time_slot} (reason: {rej.reason})"
             )
 
-        # Unfilled slots
-        parts.append("\n## UNFILLED SLOTS")
+        # Focus area section (when focus_filter is provided)
+        if focus_filter:
+            focus_lines: list[str] = []
+            filter_char_ids: list[str] = focus_filter.get("character_ids") or []
+            filter_loc_ids: list[str] = focus_filter.get("location_ids") or []
+            filter_time_slots: list[str] = focus_filter.get("time_slots") or []
+
+            if filter_char_ids:
+                char_names = [
+                    c.name for c in project.characters if c.id in filter_char_ids
+                ]
+                if char_names:
+                    focus_lines.append(f"- 人物: {', '.join(char_names)}")
+            if filter_loc_ids:
+                loc_names = [
+                    l.name for l in project.locations if l.id in filter_loc_ids
+                ]
+                if loc_names:
+                    focus_lines.append(f"- 地点: {', '.join(loc_names)}")
+            if filter_time_slots:
+                focus_lines.append(f"- 时间: {', '.join(filter_time_slots)}")
+
+            if focus_lines:
+                parts.append("\n## 重点推断范围")
+                parts.append("请重点推断以下维度的组合：")
+                parts.extend(focus_lines)
+
+        # Unfilled slots (filtered when focus_filter is provided)
+        parts.append("\n## UNFILLED SLOTS TO DEDUCE")
+
+        filter_char_ids_set: set[str] = set(
+            (focus_filter or {}).get("character_ids") or []
+        )
+        filter_loc_ids_set: set[str] = set(
+            (focus_filter or {}).get("location_ids") or []
+        )
+        filter_time_slots_set: set[str] = set(
+            (focus_filter or {}).get("time_slots") or []
+        )
+
         for char in project.characters:
+            # Skip character if focus filter specifies characters and this one is not in it
+            if filter_char_ids_set and char.id not in filter_char_ids_set:
+                continue
             for ts in project.time_slots:
+                # Skip time slot if focus filter specifies time slots and this one is not in it
+                if filter_time_slots_set and ts not in filter_time_slots_set:
+                    continue
                 has_fact = any(
                     f.character_id == char.id and f.time_slot == ts for f in project.facts
                 )

@@ -357,3 +357,101 @@ class TestScriptAnalysisPrompt:
         other_scripts_section = user_prompt.split("### Other Scripts")[1].split("### New Script Text")[0]
         assert "第一幕" in other_scripts_section
         assert "第二幕" not in other_scripts_section
+
+
+class TestFocusedPrompt:
+    """Tests for build_deduction_prompt() with focus_filter parameter."""
+
+    @pytest.fixture
+    def two_char_project(self):
+        """A project with two characters for focus filter testing."""
+        return Project(
+            name="推理游戏",
+            description="测试用推理游戏",
+            time_slots=["14:00", "15:00", "16:00"],
+            characters=[
+                Character(id="char-A", name="张三", status=CharacterStatus.confirmed),
+                Character(id="char-B", name="李四", status=CharacterStatus.confirmed),
+            ],
+            locations=[
+                Location(id="loc-X", name="图书馆"),
+                Location(id="loc-Y", name="花园"),
+            ],
+        )
+
+    def test_accepts_focus_filter(self, engine, two_char_project):
+        """build_deduction_prompt should accept a focus_filter dict without error."""
+        focus_filter = {"character_ids": ["char-A"]}
+        result = engine.build_deduction_prompt(two_char_project, focus_filter=focus_filter)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_focus_limits_unfilled_slots(self, engine, two_char_project):
+        """With focus on one character, unfilled slots should only show that character."""
+        focus_filter = {"character_ids": ["char-A"]}
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=focus_filter)
+        # Focused character's slots should appear
+        assert "张三 at 14:00: ???" in user_prompt
+        assert "张三 at 15:00: ???" in user_prompt
+        assert "张三 at 16:00: ???" in user_prompt
+        # Non-focused character's slots should NOT appear
+        assert "李四 at 14:00: ???" not in user_prompt
+        assert "李四 at 15:00: ???" not in user_prompt
+        assert "李四 at 16:00: ???" not in user_prompt
+
+    def test_focus_filter_none_shows_all_characters(self, engine, two_char_project):
+        """When focus_filter is None, all characters' unfilled slots should appear."""
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=None)
+        assert "张三 at 14:00: ???" in user_prompt
+        assert "李四 at 14:00: ???" in user_prompt
+
+    def test_focus_area_section_present_when_filter_provided(self, engine, two_char_project):
+        """When focus_filter is provided, FOCUS AREA section should appear in user prompt."""
+        focus_filter = {"character_ids": ["char-A"]}
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=focus_filter)
+        assert "重点推断范围" in user_prompt
+        assert "张三" in user_prompt
+
+    def test_focus_area_section_absent_without_filter(self, engine, two_char_project):
+        """When focus_filter is None, FOCUS AREA section should NOT appear."""
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=None)
+        assert "重点推断范围" not in user_prompt
+
+    def test_focus_filter_with_location_ids(self, engine, two_char_project):
+        """Focus filter with location_ids should add location names to focus section."""
+        focus_filter = {"location_ids": ["loc-X"]}
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=focus_filter)
+        assert "重点推断范围" in user_prompt
+        assert "图书馆" in user_prompt
+
+    def test_focus_filter_with_time_slots(self, engine, two_char_project):
+        """Focus filter with time_slots should limit unfilled slots to those time slots."""
+        focus_filter = {"time_slots": ["14:00"]}
+        _, user_prompt = engine.build_deduction_prompt(two_char_project, focus_filter=focus_filter)
+        # Only 14:00 slots should appear in UNFILLED SLOTS section
+        assert "张三 at 14:00: ???" in user_prompt
+        assert "李四 at 14:00: ???" in user_prompt
+        # 15:00 and 16:00 should NOT appear
+        assert "at 15:00: ???" not in user_prompt
+        assert "at 16:00: ???" not in user_prompt
+
+    def test_prompt_has_no_repeat_instruction(self, engine, two_char_project):
+        """System prompt should contain a strong no-repeat instruction."""
+        system_prompt, _ = engine.build_deduction_prompt(two_char_project)
+        # Check for the Chinese anti-repetition instruction
+        assert "严格禁止重复" in system_prompt or "绝对不要再次" in system_prompt
+
+    def test_rejected_section_has_strong_warning(self, engine, two_char_project):
+        """REJECTED DEDUCTIONS section should have emphatic wording."""
+        _, user_prompt = engine.build_deduction_prompt(two_char_project)
+        assert "绝对不要再次建议" in user_prompt
+
+    def test_backward_compatible_no_focus_filter(self, engine, sample_project):
+        """Calling without focus_filter arg should produce same result as before."""
+        system_prompt, user_prompt = engine.build_deduction_prompt(sample_project)
+        # Should still contain all the usual content
+        assert "庄园谋杀案" in user_prompt
+        assert "维多利亚夫人" in user_prompt
+        assert "芥末上校" in user_prompt
+        assert isinstance(system_prompt, str)
+        assert len(system_prompt) > 100
