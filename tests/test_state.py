@@ -286,7 +286,7 @@ class TestAppStateCallbacks:
     def test_callback_on_entity_add(self, state):
         state.create_project(name="Test")
         calls = []
-        state.on_change(lambda: calls.append(1))
+        state.on_data_change(lambda: calls.append(1))
         state.add_character(name="Alice")
         state.add_location(name="Library")
         assert len(calls) == 2
@@ -301,6 +301,19 @@ class TestAppStateCallbacks:
         state.on_change(bad_cb)
         state.on_change(lambda: calls.append(1))
         state.create_project(name="Test")
+        assert len(calls) == 1  # Second callback still ran
+
+    def test_bad_data_callback_does_not_break(self, state):
+        """A failing data callback should not prevent others from running."""
+        state.create_project(name="Test")
+        calls = []
+
+        def bad_cb():
+            raise RuntimeError("bad data callback")
+
+        state.on_data_change(bad_cb)
+        state.on_data_change(lambda: calls.append(1))
+        state.add_character(name="Alice")
         assert len(calls) == 1  # Second callback still ran
 
 

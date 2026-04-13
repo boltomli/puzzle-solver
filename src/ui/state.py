@@ -32,16 +32,29 @@ class AppState:
         self.store = store or JsonStore()
         self.current_project: Optional[Project] = None
         self._on_change_callbacks: list[Callable] = []
+        self._on_data_change_callbacks: list[Callable] = []
 
     # --- Reactive notification ---
 
     def on_change(self, callback: Callable) -> None:
-        """Register a callback to be called when state changes."""
+        """Register a callback for project-level changes (load/create/delete)."""
         self._on_change_callbacks.append(callback)
 
+    def on_data_change(self, callback: Callable) -> None:
+        """Register a callback for entity-level data changes."""
+        self._on_data_change_callbacks.append(callback)
+
     def _notify(self) -> None:
-        """Notify all registered callbacks of a state change."""
+        """Notify project-level callbacks (full UI refresh)."""
         for cb in self._on_change_callbacks:
+            try:
+                cb()
+            except Exception:
+                pass  # Don't let a bad callback break the chain
+
+    def _notify_data(self) -> None:
+        """Notify data-level callbacks (partial refresh only)."""
+        for cb in self._on_data_change_callbacks:
             try:
                 cb()
             except Exception:
@@ -107,7 +120,7 @@ class AppState:
         )
         self.current_project.characters.append(char)
         self.save()
-        self._notify()
+        self._notify_data()
         return char
 
     def update_character(
@@ -132,7 +145,7 @@ class AppState:
                 if status is not None:
                     char.status = status
                 self.save()
-                self._notify()
+                self._notify_data()
                 return char
         return None
 
@@ -146,7 +159,7 @@ class AppState:
         ]
         if len(self.current_project.characters) < original_len:
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -168,7 +181,7 @@ class AppState:
         )
         self.current_project.locations.append(loc)
         self.save()
-        self._notify()
+        self._notify_data()
         return loc
 
     def update_location(
@@ -190,7 +203,7 @@ class AppState:
                 if description is not None:
                     loc.description = description
                 self.save()
-                self._notify()
+                self._notify_data()
                 return loc
         return None
 
@@ -204,7 +217,7 @@ class AppState:
         ]
         if len(self.current_project.locations) < original_len:
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -234,7 +247,7 @@ class AppState:
         )
         self.current_project.scripts.append(script)
         self.save()
-        self._notify()
+        self._notify_data()
         return script
 
     def update_script(
@@ -256,7 +269,7 @@ class AppState:
                 if user_notes is not None:
                     script.metadata.user_notes = user_notes
                 self.save()
-                self._notify()
+                self._notify_data()
                 return script
         return None
 
@@ -281,7 +294,7 @@ class AppState:
         ]
         if len(self.current_project.scripts) < original_len:
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -309,7 +322,7 @@ class AppState:
         )
         self.current_project.facts.append(fact)
         self.save()
-        self._notify()
+        self._notify_data()
         return fact
 
     def remove_fact(self, fact_id: str) -> bool:
@@ -322,7 +335,7 @@ class AppState:
         ]
         if len(self.current_project.facts) < original_len:
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -339,7 +352,7 @@ class AppState:
         self.current_project.time_slots.append(time_slot)
         self.current_project.time_slots.sort()
         self.save()
-        self._notify()
+        self._notify_data()
         return True
 
     def remove_time_slot(self, time_slot: str) -> bool:
@@ -349,7 +362,7 @@ class AppState:
         if time_slot in self.current_project.time_slots:
             self.current_project.time_slots.remove(time_slot)
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -366,7 +379,7 @@ class AppState:
         hint = Hint(type=hint_type, content=content)
         self.current_project.hints.append(hint)
         self.save()
-        self._notify()
+        self._notify_data()
         return hint
 
     def remove_hint(self, hint_id: str) -> bool:
@@ -379,7 +392,7 @@ class AppState:
         ]
         if len(self.current_project.hints) < original_len:
             self.save()
-            self._notify()
+            self._notify_data()
             return True
         return False
 
@@ -391,7 +404,7 @@ class AppState:
             raise ValueError("No project loaded")
         self.current_project.deductions.append(deduction)
         self.save()
-        self._notify()
+        self._notify_data()
         return deduction
 
     def accept_deduction(self, deduction_id: str) -> Fact | None:
@@ -422,7 +435,7 @@ class AppState:
         )
         self.current_project.facts.append(fact)
         self.save()
-        self._notify()
+        self._notify_data()
         return fact
 
     def reject_deduction(self, deduction_id: str, reason: str = "") -> Rejection | None:
@@ -451,7 +464,7 @@ class AppState:
         )
         self.current_project.rejections.append(rejection)
         self.save()
-        self._notify()
+        self._notify_data()
         return rejection
 
     def get_pending_deductions(self) -> list[Deduction]:
@@ -475,7 +488,7 @@ class AppState:
         removed = original_len - len(self.current_project.deductions)
         if removed > 0:
             self.save()
-            self._notify()
+            self._notify_data()
         return removed
 
 
