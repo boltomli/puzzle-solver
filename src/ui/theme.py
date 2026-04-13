@@ -66,20 +66,23 @@ def create_app():
 
     @ui.page("/")
     def main_page():
+        # CRITICAL: Clear previous callbacks to prevent accumulation
+        # (each page load registers a new callback)
+        app_state.clear_callbacks()
+
         # Dark mode support — use a toggle-able dark mode
         dark = ui.dark_mode(True)
 
-        # --- Refreshable main content area ---
-        @ui.refreshable
+        # --- Main content rendering (no @ui.refreshable needed) ---
         def main_content():
             if app_state.current_project is None:
                 _render_landing_page()
             else:
                 _render_project_view(dark)
 
-        # Register state change callback
+        # Register state change callback — navigate for a clean re-render
         def on_state_change():
-            main_content.refresh()
+            ui.navigate.to('/')
 
         app_state.on_change(on_state_change)
 
@@ -132,7 +135,7 @@ def create_app():
     def _go_home():
         """Go back to landing page (unload project)."""
         app_state.current_project = None
-        app_state._notify()
+        ui.navigate.to('/')
 
     def _switch_project(project_id: str):
         """Switch to a different project."""

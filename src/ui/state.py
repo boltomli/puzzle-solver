@@ -44,6 +44,11 @@ class AppState:
         """Register a callback for entity-level data changes."""
         self._on_data_change_callbacks.append(callback)
 
+    def clear_callbacks(self) -> None:
+        """Clear all registered callbacks. Called on page load to prevent accumulation."""
+        self._on_change_callbacks.clear()
+        self._on_data_change_callbacks.clear()
+
     def _notify(self) -> None:
         """Notify project-level callbacks (full UI refresh)."""
         for cb in self._on_change_callbacks:
