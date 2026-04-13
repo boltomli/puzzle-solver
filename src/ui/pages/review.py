@@ -1,10 +1,11 @@
-"""推断审查页面 — Review tab.
+"""推断审查页面 — Review tab (Flet version).
 
 Displays pending deductions for user to accept, reject, or skip.
 Sorted by confidence: certain → high → medium → low.
+Shows deduction history (accepted/rejected) in a collapsible section.
 """
 
-from nicegui import ui
+import flet as ft
 
 from src.models.puzzle import ConfidenceLevel, DeductionStatus
 from src.services.deduction import DeductionService
@@ -27,188 +28,314 @@ _CONFIDENCE_LABELS = {
 }
 
 _CONFIDENCE_COLORS = {
-    ConfidenceLevel.certain: "positive",
-    ConfidenceLevel.high: "primary",
-    ConfidenceLevel.medium: "warning",
-    ConfidenceLevel.low: "grey",
+    ConfidenceLevel.certain: ft.Colors.GREEN,
+    ConfidenceLevel.high: ft.Colors.BLUE,
+    ConfidenceLevel.medium: ft.Colors.AMBER,
+    ConfidenceLevel.low: ft.Colors.GREY,
 }
 
 
-def review_tab_content():
-    """Render the deduction review tab content."""
-    with ui.column().classes("w-full q-pa-md gap-4"):
-        ui.label("推断审查").classes("text-h5")
+def build_review_tab(page: ft.Page) -> ft.Control:
+    """Build the deduction review tab content.
 
-        if not app_state.current_project:
-            ui.label("请先选择或创建一个项目").classes("text-body1 text-grey")
-            return
-
-        @ui.refreshable
-        def review_content():
-            proj = app_state.current_project
-            if not proj:
-                return
-
-            pending = [
-                d for d in proj.deductions if d.status == DeductionStatus.pending
-            ]
-
-            if not pending:
-                with ui.card().classes("w-full q-pa-lg text-center"):
-                    ui.icon("check_circle", size="3em", color="positive")
-                    ui.label("暂无待审查的推断").classes(
-                        "text-body1 text-grey q-mt-sm"
-                    )
-                    ui.label("可在「矩阵」页面触发 AI 推断或消元推断").classes(
-                        "text-caption text-grey"
-                    )
-                return
-
-            # Sort by confidence
-            pending.sort(key=lambda d: _CONFIDENCE_ORDER.get(d.confidence, 99))
-
-            ui.label(f"共 {len(pending)} 条待审查推断").classes("text-subtitle1")
-
-            # Batch actions
-            with ui.row().classes("gap-2"):
-
-                def clear_all():
-                    count = app_state.clear_pending_deductions()
-                    ui.notify(f"已清除 {count} 条待审查推断", type="info")
-                    review_content.refresh()
-
-                ui.button("清除所有待审查", on_click=clear_all, icon="clear_all").props(
-                    "flat color=negative"
-                )
-
-            # Build lookup maps
-            char_map = {c.id: c.name for c in proj.characters}
-            loc_map = {l.id: l.name for l in proj.locations}
-
-            for ded in pending:
-                char_name = char_map.get(ded.character_id, ded.character_id[:8])
-                loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
-                conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
-                conf_color = _CONFIDENCE_COLORS.get(ded.confidence, "grey")
-
-                with ui.card().classes("w-full q-mb-md"):
-                    with ui.card_section():
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("lightbulb", color="amber")
-                            ui.label("推断").classes("text-h6")
-                            ui.badge(
-                                f"置信度: {conf_label}",
-                                color=conf_color,
-                            ).classes("text-body2")
-
-                    with ui.card_section():
-                        with ui.row().classes("gap-6 flex-wrap"):
-                            with ui.column().classes("gap-1"):
-                                ui.label("人物").classes("text-caption text-grey")
-                                ui.label(char_name).classes(
-                                    "text-subtitle1 text-weight-bold"
-                                )
-                            with ui.column().classes("gap-1"):
-                                ui.label("地点").classes("text-caption text-grey")
-                                ui.label(loc_name).classes(
-                                    "text-subtitle1 text-weight-bold"
-                                )
-                            with ui.column().classes("gap-1"):
-                                ui.label("时间").classes("text-caption text-grey")
-                                ui.label(ded.time_slot).classes(
-                                    "text-subtitle1 text-weight-bold"
-                                )
-
-                    if ded.reasoning:
-                        with ui.card_section():
-                            ui.label("推理过程").classes(
-                                "text-caption text-grey q-mb-xs"
-                            )
-                            ui.label(ded.reasoning).classes("text-body2")
-
-                    with ui.card_actions().classes("justify-end"):
-
-                        def make_accept_handler(d_id):
-                            def handler():
-                                fact = app_state.accept_deduction(d_id)
-                                if fact:
-                                    ui.notify("推断已接受，已创建事实", type="positive")
-                                    # Auto-cascade: run elimination after acceptance
-                                    try:
-                                        new_deds = DeductionService.run_cascade(proj)
-                                        count = 0
-                                        for ded in new_deds:
-                                            already_exists = any(
-                                                d.character_id == ded.character_id
-                                                and d.location_id == ded.location_id
-                                                and d.time_slot == ded.time_slot
-                                                and d.status == DeductionStatus.pending
-                                                for d in proj.deductions
-                                            )
-                                            if not already_exists:
-                                                app_state.add_deduction(ded)
-                                                count += 1
-                                        if count > 0:
-                                            ui.notify(
-                                                f"已接受推断。消元推断发现 {count} 条新确定推断",
-                                                type="positive",
-                                            )
-                                        else:
-                                            ui.notify(
-                                                "已接受推断。消元推断未发现新推断",
-                                                type="info",
-                                            )
-                                    except Exception:
-                                        pass  # Don't block acceptance on cascade failure
-                                review_content.refresh()
-
-                            return handler
-
-                        def make_reject_handler(d_id, d_char, d_loc, d_ts):
-                            def handler():
-                                _show_reject_dialog(
-                                    d_id, d_char, d_loc, d_ts, review_content
-                                )
-
-                            return handler
-
-                        ui.button(
-                            "✅ 接受",
-                            on_click=make_accept_handler(ded.id),
-                        ).props("color=positive")
-                        ui.button(
-                            "❌ 拒绝",
-                            on_click=make_reject_handler(
-                                ded.id, char_name, loc_name, ded.time_slot
-                            ),
-                        ).props("color=negative outline")
-
-        review_content()
-
-        # --- Deduction History Section ---
-        _render_deduction_history()
-
-
-def _render_deduction_history():
-    """Render the history of resolved (accepted/rejected) deductions."""
+    Returns a scrollable Column with pending deductions, batch actions,
+    and deduction history.
+    """
     proj = app_state.current_project
     if not proj:
-        return
+        return ft.Column(
+            controls=[
+                ft.Text("推断审查", size=24, weight=ft.FontWeight.BOLD),
+                ft.Text("请先选择或创建一个项目", color=ft.Colors.GREY),
+            ],
+            scroll=ft.ScrollMode.AUTO,
+        )
 
+    # Build lookup maps
+    char_map = {c.id: c.name for c in proj.characters}
+    loc_map = {loc.id: loc.name for loc in proj.locations}
+
+    def refresh():
+        """Rebuild the review tab and update the page."""
+        # Find the tab content container and replace its content
+        for ctrl in page.controls:
+            if isinstance(ctrl, ft.Column):
+                # Walk the tree to find the tab_content_area
+                _replace_in_tree(ctrl, page)
+                break
+        page.update()
+
+    def _replace_in_tree(parent, page):
+        """Find the tab content container and replace with new review content."""
+        if hasattr(parent, 'controls'):
+            for i, ctrl in enumerate(parent.controls):
+                if isinstance(ctrl, ft.Container) and ctrl.expand:
+                    ctrl.content = build_review_tab(page)
+                    return True
+                if _replace_in_tree(ctrl, page):
+                    return True
+        return False
+
+    # --- Pending deductions ---
+    pending = [d for d in proj.deductions if d.status == DeductionStatus.pending]
+    pending.sort(key=lambda d: _CONFIDENCE_ORDER.get(d.confidence, 99))
+
+    controls: list[ft.Control] = [
+        ft.Text("推断审查", size=24, weight=ft.FontWeight.BOLD),
+    ]
+
+    if not pending:
+        # Empty state
+        controls.append(
+            ft.Card(
+                content=ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            ft.Icon(
+                                ft.Icons.CHECK_CIRCLE,
+                                size=48,
+                                color=ft.Colors.GREEN,
+                            ),
+                            ft.Text(
+                                "暂无待审查的推断",
+                                size=16,
+                                color=ft.Colors.GREY,
+                            ),
+                            ft.Text(
+                                "可在「矩阵」页面触发 AI 推断或消元推断",
+                                size=12,
+                                color=ft.Colors.GREY,
+                            ),
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=8,
+                    ),
+                    padding=30,
+                    alignment=ft.alignment.center,
+                ),
+            )
+        )
+    else:
+        # Pending count and batch actions
+        controls.append(
+            ft.Text(f"共 {len(pending)} 条待审查推断", size=16),
+        )
+
+        def clear_all(e):
+            count = app_state.clear_pending_deductions()
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"已清除 {count} 条待审查推断")
+            )
+            page.snack_bar.open = True
+            refresh()
+
+        controls.append(
+            ft.Row(
+                controls=[
+                    ft.TextButton(
+                        "清除所有待审查",
+                        icon=ft.Icons.CLEAR_ALL,
+                        style=ft.ButtonStyle(color=ft.Colors.RED),
+                        on_click=clear_all,
+                    ),
+                ],
+            )
+        )
+
+        # --- Deduction cards ---
+        for ded in pending:
+            char_name = char_map.get(ded.character_id, ded.character_id[:8])
+            loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+            conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
+            conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
+
+            # Confidence badge
+            confidence_badge = ft.Container(
+                content=ft.Text(
+                    f"置信度: {conf_label}",
+                    size=12,
+                    color=ft.Colors.WHITE,
+                ),
+                bgcolor=conf_color,
+                border_radius=12,
+                padding=ft.padding.symmetric(horizontal=10, vertical=4),
+            )
+
+            # Header row
+            header_row = ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.LIGHTBULB, color=ft.Colors.AMBER),
+                    ft.Text("推断", size=18, weight=ft.FontWeight.BOLD),
+                    confidence_badge,
+                ],
+                spacing=8,
+            )
+
+            # Entity info row
+            entity_row = ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text("人物", size=12, color=ft.Colors.GREY),
+                            ft.Text(
+                                char_name,
+                                size=16,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                        ],
+                        spacing=2,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text("地点", size=12, color=ft.Colors.GREY),
+                            ft.Text(
+                                loc_name,
+                                size=16,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                        ],
+                        spacing=2,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text("时间", size=12, color=ft.Colors.GREY),
+                            ft.Text(
+                                ded.time_slot,
+                                size=16,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                        ],
+                        spacing=2,
+                    ),
+                ],
+                spacing=40,
+            )
+
+            # Reasoning section
+            card_controls: list[ft.Control] = [header_row, entity_row]
+            if ded.reasoning:
+                card_controls.append(
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                "推理过程",
+                                size=12,
+                                color=ft.Colors.GREY,
+                            ),
+                            ft.Text(ded.reasoning, size=14),
+                        ],
+                        spacing=4,
+                    )
+                )
+
+            # --- Accept handler ---
+            def make_accept_handler(ded_id):
+                def handler(e):
+                    fact = app_state.accept_deduction(ded_id)
+                    if fact:
+                        # Auto-cascade
+                        try:
+                            new_deds = DeductionService.run_cascade(proj)
+                            count = 0
+                            for ded in new_deds:
+                                already = any(
+                                    d.character_id == ded.character_id
+                                    and d.location_id == ded.location_id
+                                    and d.time_slot == ded.time_slot
+                                    and d.status == DeductionStatus.pending
+                                    for d in proj.deductions
+                                )
+                                if not already:
+                                    app_state.add_deduction(ded)
+                                    count += 1
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(
+                                    f"已接受推断。消元发现 {count} 条新推断"
+                                )
+                            )
+                            page.snack_bar.open = True
+                        except Exception:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text("已接受推断")
+                            )
+                            page.snack_bar.open = True
+                    refresh()
+
+                return handler
+
+            # --- Reject handler ---
+            def make_reject_handler(ded_id, d_char, d_loc, d_ts):
+                def handler(e):
+                    _show_reject_dialog(
+                        page, ded_id, d_char, d_loc, d_ts, refresh
+                    )
+
+                return handler
+
+            # Action buttons row
+            action_row = ft.Row(
+                controls=[
+                    ft.ElevatedButton(
+                        "✅ 接受",
+                        bgcolor=ft.Colors.GREEN,
+                        color=ft.Colors.WHITE,
+                        on_click=make_accept_handler(ded.id),
+                    ),
+                    ft.OutlinedButton(
+                        "❌ 拒绝",
+                        style=ft.ButtonStyle(color=ft.Colors.RED),
+                        on_click=make_reject_handler(
+                            ded.id, char_name, loc_name, ded.time_slot
+                        ),
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.END,
+                spacing=10,
+            )
+            card_controls.append(action_row)
+
+            controls.append(
+                ft.Card(
+                    content=ft.Container(
+                        content=ft.Column(
+                            controls=card_controls,
+                            spacing=12,
+                        ),
+                        padding=20,
+                    ),
+                )
+            )
+
+    # --- Deduction History ---
+    history_control = _build_deduction_history(proj, char_map, loc_map)
+    if history_control:
+        controls.append(ft.Divider())
+        controls.append(history_control)
+
+    return ft.Column(
+        controls=controls,
+        scroll=ft.ScrollMode.AUTO,
+        spacing=12,
+    )
+
+
+def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
+    """Build the deduction history section as an ExpansionTile.
+
+    Shows resolved (accepted/rejected) deductions sorted by resolved_at descending.
+    Returns None if no resolved deductions exist.
+    """
     resolved = [
-        d for d in proj.deductions
+        d
+        for d in proj.deductions
         if d.status in (DeductionStatus.accepted, DeductionStatus.rejected)
     ]
 
     if not resolved:
-        return
+        return None
 
     # Sort by resolved_at descending (most recent first)
     resolved.sort(key=lambda d: d.resolved_at or d.created_at, reverse=True)
-
-    # Build lookup maps
-    char_map = {c.id: c.name for c in proj.characters}
-    loc_map = {l.id: l.name for l in proj.locations}
 
     # Build rejection reason map
     rejection_map = {}
@@ -216,84 +343,197 @@ def _render_deduction_history():
         if r.from_deduction_id:
             rejection_map[r.from_deduction_id] = r.reason
 
-    with ui.expansion("📜 推断历史", icon="history").classes("w-full"):
-        ui.label(f"共 {len(resolved)} 条已处理推断").classes("text-subtitle2 q-mb-sm")
+    history_items: list[ft.Control] = [
+        ft.Text(
+            f"共 {len(resolved)} 条已处理推断",
+            size=14,
+            color=ft.Colors.GREY,
+        ),
+    ]
 
-        for ded in resolved:
-            char_name = char_map.get(ded.character_id, ded.character_id[:8])
-            loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
-            conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
+    for ded in resolved:
+        char_name = char_map.get(ded.character_id, ded.character_id[:8])
+        loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+        conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
+        conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
 
-            is_accepted = ded.status == DeductionStatus.accepted
-            status_label = "已接受" if is_accepted else "已拒绝"
-            status_color = "positive" if is_accepted else "negative"
-            status_icon = "check_circle" if is_accepted else "cancel"
+        is_accepted = ded.status == DeductionStatus.accepted
+        status_label = "已接受" if is_accepted else "已拒绝"
+        status_color = ft.Colors.GREEN if is_accepted else ft.Colors.RED
+        status_icon = ft.Icons.CHECK_CIRCLE if is_accepted else ft.Icons.CANCEL
 
-            with ui.card().classes("w-full q-mb-sm"):
-                with ui.card_section():
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon(status_icon, color=status_color)
-                        ui.badge(status_label, color=status_color).classes("text-body2")
-                        ui.badge(
-                            f"置信度: {conf_label}",
-                            color=_CONFIDENCE_COLORS.get(ded.confidence, "grey"),
-                        ).classes("text-body2")
-                        if ded.resolved_at:
-                            ui.label(
-                                ded.resolved_at.strftime("%m-%d %H:%M")
-                            ).classes("text-caption text-grey")
+        # Status and confidence badges row
+        badge_row = ft.Row(
+            controls=[
+                ft.Icon(status_icon, color=status_color, size=20),
+                ft.Container(
+                    content=ft.Text(
+                        status_label, size=12, color=ft.Colors.WHITE
+                    ),
+                    bgcolor=status_color,
+                    border_radius=12,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                ),
+                ft.Container(
+                    content=ft.Text(
+                        f"置信度: {conf_label}",
+                        size=12,
+                        color=ft.Colors.WHITE,
+                    ),
+                    bgcolor=conf_color,
+                    border_radius=12,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                ),
+            ],
+            spacing=8,
+        )
+        if ded.resolved_at:
+            badge_row.controls.append(
+                ft.Text(
+                    ded.resolved_at.strftime("%m-%d %H:%M"),
+                    size=12,
+                    color=ft.Colors.GREY,
+                )
+            )
 
-                with ui.card_section():
-                    with ui.row().classes("gap-6 flex-wrap"):
-                        with ui.column().classes("gap-1"):
-                            ui.label("人物").classes("text-caption text-grey")
-                            ui.label(char_name).classes("text-subtitle1 text-weight-bold")
-                        with ui.column().classes("gap-1"):
-                            ui.label("地点").classes("text-caption text-grey")
-                            ui.label(loc_name).classes("text-subtitle1 text-weight-bold")
-                        with ui.column().classes("gap-1"):
-                            ui.label("时间").classes("text-caption text-grey")
-                            ui.label(ded.time_slot).classes("text-subtitle1 text-weight-bold")
+        # Entity info
+        entity_row = ft.Row(
+            controls=[
+                ft.Column(
+                    controls=[
+                        ft.Text("人物", size=12, color=ft.Colors.GREY),
+                        ft.Text(
+                            char_name,
+                            size=14,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                    ],
+                    spacing=2,
+                ),
+                ft.Column(
+                    controls=[
+                        ft.Text("地点", size=12, color=ft.Colors.GREY),
+                        ft.Text(
+                            loc_name,
+                            size=14,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                    ],
+                    spacing=2,
+                ),
+                ft.Column(
+                    controls=[
+                        ft.Text("时间", size=12, color=ft.Colors.GREY),
+                        ft.Text(
+                            ded.time_slot,
+                            size=14,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                    ],
+                    spacing=2,
+                ),
+            ],
+            spacing=30,
+        )
 
-                if ded.reasoning:
-                    with ui.card_section():
-                        ui.label("推理过程").classes("text-caption text-grey q-mb-xs")
-                        ui.label(ded.reasoning).classes("text-body2")
+        card_controls: list[ft.Control] = [badge_row, entity_row]
 
-                # Show rejection reason if rejected
-                if not is_accepted and ded.id in rejection_map:
-                    with ui.card_section():
-                        ui.label("拒绝原因").classes("text-caption text-negative q-mb-xs")
-                        ui.label(rejection_map[ded.id]).classes("text-body2 text-negative")
+        # Reasoning
+        if ded.reasoning:
+            card_controls.append(
+                ft.Column(
+                    controls=[
+                        ft.Text("推理过程", size=12, color=ft.Colors.GREY),
+                        ft.Text(ded.reasoning, size=13),
+                    ],
+                    spacing=2,
+                )
+            )
+
+        # Rejection reason
+        if not is_accepted and ded.id in rejection_map:
+            card_controls.append(
+                ft.Column(
+                    controls=[
+                        ft.Text(
+                            "拒绝原因",
+                            size=12,
+                            color=ft.Colors.RED,
+                        ),
+                        ft.Text(
+                            rejection_map[ded.id],
+                            size=13,
+                            color=ft.Colors.RED,
+                        ),
+                    ],
+                    spacing=2,
+                )
+            )
+
+        history_items.append(
+            ft.Card(
+                content=ft.Container(
+                    content=ft.Column(
+                        controls=card_controls,
+                        spacing=8,
+                    ),
+                    padding=15,
+                ),
+            )
+        )
+
+    return ft.ExpansionTile(
+        title=ft.Text("📜 推断历史"),
+        leading=ft.Icon(ft.Icons.HISTORY),
+        controls=history_items,
+        initially_expanded=False,
+    )
 
 
-def _show_reject_dialog(
-    deduction_id: str,
-    char_name: str,
-    loc_name: str,
-    time_slot: str,
-    refresh_fn,
-):
+def _show_reject_dialog(page, deduction_id, char_name, loc_name, time_slot, refresh_fn):
     """Show a dialog for rejecting a deduction with an optional reason."""
-    with ui.dialog() as dlg, ui.card().classes("w-96"):
-        ui.label("拒绝推断").classes("text-h6 q-mb-md")
-        ui.label(f"{char_name} 在 {time_slot} 于 {loc_name}").classes("text-body1")
+    reason_field = ft.TextField(
+        label="拒绝原因（建议填写）",
+        hint_text="为什么拒绝这个推断？",
+        multiline=True,
+        min_lines=3,
+        max_lines=5,
+    )
 
-        reason_input = ui.textarea(
-            label="拒绝原因（建议填写）",
-            placeholder="为什么拒绝这个推断？",
-        ).classes("w-full").props("rows=3")
+    def do_reject(e):
+        reason = reason_field.value.strip() if reason_field.value else ""
+        rejection = app_state.reject_deduction(deduction_id, reason)
+        if rejection:
+            page.snack_bar = ft.SnackBar(ft.Text("推断已拒绝"))
+            page.snack_bar.open = True
+        dlg.open = False
+        page.update()
+        refresh_fn()
 
-        def do_reject():
-            reason = reason_input.value.strip()
-            rejection = app_state.reject_deduction(deduction_id, reason)
-            if rejection:
-                ui.notify("推断已拒绝", type="info")
-            dlg.close()
-            refresh_fn.refresh()
+    def do_cancel(e):
+        dlg.open = False
+        page.update()
 
-        with ui.row().classes("w-full justify-end q-mt-md"):
-            ui.button("取消", on_click=dlg.close).props("flat")
-            ui.button("确认拒绝", on_click=do_reject).props("color=negative")
-
-    dlg.open()
+    dlg = ft.AlertDialog(
+        title=ft.Text("拒绝推断"),
+        content=ft.Column(
+            controls=[
+                ft.Text(f"{char_name} 在 {time_slot} 于 {loc_name}"),
+                reason_field,
+            ],
+            tight=True,
+            spacing=10,
+        ),
+        actions=[
+            ft.TextButton("取消", on_click=do_cancel),
+            ft.ElevatedButton(
+                "确认拒绝",
+                bgcolor=ft.Colors.RED,
+                color=ft.Colors.WHITE,
+                on_click=do_reject,
+            ),
+        ],
+    )
+    page.overlay.append(dlg)
+    dlg.open = True
+    page.update()
