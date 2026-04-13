@@ -18,6 +18,7 @@ from src.models.puzzle import (
     Rejection,
     SourceType,
 )
+from src.services.deduction import DeductionService
 from src.storage.json_store import JsonStore
 from src.ui.state import AppState
 
@@ -183,3 +184,137 @@ class TestCoreE2EFlow:
         assert state.current_project.name == "持久化测试"
         assert len(state.current_project.characters) == 1
         assert state.current_project.characters[0].name == "TestChar"
+
+
+# ---------------------------------------------------------------------------
+# Populated 3×3×3 fixture for deduction / cascade / accept-reject tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def populated_state(state):
+    """Create a 3×3×3 project: Emma/Alice/Bob × 草坪/图书馆/厨房 × 14:00/15:00/16:00."""
+    state.create_project(name="E2E推断测试", time_slots=["14:00", "15:00", "16:00"])
+    state.add_character(name="Emma")
+    state.add_character(name="Alice")
+    state.add_character(name="Bob")
+    state.add_location(name="草坪")
+    state.add_location(name="图书馆")
+    state.add_location(name="厨房")
+    return state
+
+
+class TestCascadeE2E:
+    def test_cascade_after_filling_two_of_three(self, populated_state):
+        """When 2 of 3 chars are placed at a time, cascade should find the third."""
+        s = populated_state
+        proj = s.current_project
+        emma, alice, bob = proj.characters
+        lawn, lib, kitchen = proj.locations
+
+        # Place Emma→草坪 and Alice→图书馆 at 14:00
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
+        s.add_fact(character_id=alice.id, location_id=lib.id, time_slot="14:00")
+
+        # Cascade should deduce Bob→厨房 at 14:00
+        new_deds = DeductionService.run_cascade(proj)
+        bob_14 = next(
+            (d for d in new_deds if d.character_id == bob.id and d.time_slot == "14:00"),
+            None,
+        )
+        assert bob_14 is not None
+        assert bob_14.location_id == kitchen.id
+        assert bob_14.confidence == ConfidenceLevel.certain
+
+    def test_cascade_no_result_with_ambiguity(self, populated_state):
+        """Only 1 fact at a time slot should NOT trigger cascade (2 remaining)."""
+        s = populated_state
+        proj = s.current_project
+        emma = proj.characters[0]
+        lawn = proj.locations[0]
+
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
+        new_deds = DeductionService.run_cascade(proj)
+        # Alice and Bob both have 2 remaining locations — no cascade
+        deds_14 = [d for d in new_deds if d.time_slot == "14:00"]
+        assert len(deds_14) == 0
+
+
+class TestAcceptRejectE2E:
+    def test_accept_deduction_creates_fact(self, populated_state):
+        """Accepting a deduction should create a corresponding Fact."""
+        s = populated_state
+        proj = s.current_project
+        emma = proj.characters[0]
+        lawn = proj.locations[0]
+
+        ded = Deduction(
+            character_id=emma.id,
+            location_id=lawn.id,
+            time_slot="15:00",
+            confidence=ConfidenceLevel.high,
+            reasoning="测试推断",
+        )
+        s.add_deduction(ded)
+        assert len(s.get_pending_deductions()) == 1
+
+        fact = s.accept_deduction(ded.id)
+        assert fact is not None
+        assert fact.character_id == emma.id
+        assert fact.location_id == lawn.id
+        assert fact.time_slot == "15:00"
+        assert fact.source_type == SourceType.ai_deduction
+        assert len(s.get_pending_deductions()) == 0
+        assert ded.status == DeductionStatus.accepted
+
+    def test_reject_deduction_creates_rejection(self, populated_state):
+        """Rejecting a deduction should create a Rejection record."""
+        s = populated_state
+        proj = s.current_project
+        emma = proj.characters[0]
+        lawn = proj.locations[0]
+
+        ded = Deduction(
+            character_id=emma.id,
+            location_id=lawn.id,
+            time_slot="15:00",
+            confidence=ConfidenceLevel.medium,
+            reasoning="可疑推断",
+        )
+        s.add_deduction(ded)
+        rejection = s.reject_deduction(ded.id, reason="证据不足")
+        assert rejection is not None
+        assert rejection.character_id == emma.id
+        assert rejection.reason == "证据不足"
+        assert ded.status == DeductionStatus.rejected
+        assert len(proj.rejections) == 1
+
+    def test_accept_then_cascade(self, populated_state):
+        """Accepting a deduction should enable cascade to find new deductions."""
+        s = populated_state
+        proj = s.current_project
+        emma, alice, bob = proj.characters
+        lawn, lib, kitchen = proj.locations
+
+        # Place Emma→草坪 at 14:00 as fact
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
+
+        # Create and accept deduction: Alice→图书馆 at 14:00
+        ded = Deduction(
+            character_id=alice.id,
+            location_id=lib.id,
+            time_slot="14:00",
+            confidence=ConfidenceLevel.high,
+            reasoning="AI推断",
+        )
+        s.add_deduction(ded)
+        fact = s.accept_deduction(ded.id)
+        assert fact is not None
+
+        # Now cascade: Bob must be in 厨房 at 14:00
+        cascade_deds = DeductionService.run_cascade(proj)
+        bob_14 = next(
+            (d for d in cascade_deds if d.character_id == bob.id and d.time_slot == "14:00"),
+            None,
+        )
+        assert bob_14 is not None
+        assert bob_14.location_id == kitchen.id
