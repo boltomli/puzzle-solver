@@ -52,7 +52,6 @@ class LLMService:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,  # Lower for more deterministic reasoning
-            response_format={"type": "json_object"},  # Request JSON output
         )
         return response.choices[0].message.content or ""
 

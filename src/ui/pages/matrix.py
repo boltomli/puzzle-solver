@@ -182,7 +182,10 @@ def matrix_tab_content():
                 except Exception as e:
                     ui.notify(f"AI 推断失败: {str(e)[:200]}", type="negative", timeout=10000)
                 finally:
-                    spinner.delete()
+                    try:
+                        spinner.delete()
+                    except (RuntimeError, Exception):
+                        pass
 
             def run_cascade_deduction():
                 """Trigger local elimination-based cascade."""

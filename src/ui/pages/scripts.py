@@ -239,14 +239,16 @@ async def _run_script_analysis(script_id: str):
         ui.notify("🤖 正在分析剧本...", type="info")
         result = await service.analyze_script(proj, script)
 
-        spinner.delete()
         _show_analysis_results_dialog(proj, result, script_id)
     except ValueError as e:
-        spinner.delete()
         ui.notify(str(e), type="negative")
     except Exception as e:
-        spinner.delete()
         ui.notify(f"剧本分析失败: {str(e)[:200]}", type="negative", timeout=10000)
+    finally:
+        try:
+            spinner.delete()
+        except (RuntimeError, Exception):
+            pass
 
 
 def _show_analysis_results_dialog(proj, result: dict, script_id: str):

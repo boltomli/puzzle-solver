@@ -100,7 +100,10 @@ def settings_tab_content():
                             timeout=10000,
                         )
                     finally:
-                        spinner.delete()
+                        try:
+                            spinner.delete()
+                        except (RuntimeError, Exception):
+                            pass
 
                 ui.button(
                     "加载模型列表",
@@ -169,7 +172,10 @@ def settings_tab_content():
                                 timeout=10000,
                             )
                         finally:
-                            spinner.delete()
+                            try:
+                                spinner.delete()
+                            except (RuntimeError, Exception):
+                                pass
 
                     ui.button("测试连接", on_click=do_test, icon="wifi").props(
                         "outline"
