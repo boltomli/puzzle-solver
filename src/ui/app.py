@@ -6,6 +6,7 @@ and tabbed navigation for the five app sections.
 
 import flet as ft
 
+from src.ui.pages.manage import build_manage_tab
 from src.ui.pages.settings import build_settings_tab
 from src.ui.state import app_state
 
@@ -89,7 +90,7 @@ def main(page: ft.Page):
         return ft.Text("推理矩阵 — 待实现", size=20)
 
     def manage_content():
-        return ft.Text("管理 — 待实现", size=20)
+        return build_manage_tab(page)
 
     def review_content():
         return ft.Text("推断审查 — 待实现", size=20)
