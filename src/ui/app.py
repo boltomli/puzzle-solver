@@ -5,6 +5,7 @@ and tabbed navigation for the five app sections.
 """
 
 import flet as ft
+from loguru import logger
 
 from src.ui.pages.manage import build_manage_tab
 from src.ui.pages.matrix import build_matrix_tab
@@ -16,6 +17,7 @@ from src.ui.state import app_state
 
 def main(page: ft.Page):
     """Flet application entry point."""
+    logger.info("app: starting Flet main()")
     page.title = "Puzzle Solver — 剧本杀推理助手"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
@@ -34,6 +36,7 @@ def main(page: ft.Page):
     # --- Project selector ---
     def on_project_change(e):
         if e.control.value:
+            logger.info("app: switching to project id={!r}", e.control.value)
             app_state.load_project(e.control.value)
             rebuild_content()
 
@@ -48,6 +51,7 @@ def main(page: ft.Page):
                 error_text.value = "项目名称不能为空"
                 page.update()
                 return
+            logger.info("app: creating project name={!r}", name)
             app_state.create_project(
                 name=name,
                 description=desc_field.value.strip() or None,
@@ -285,6 +289,7 @@ def _build_project_view(
 
     # --- Home button ---
     def go_home(e):
+        logger.info("app: going home, unloading project")
         app_state.current_project = None
         main(page)
 
@@ -306,6 +311,8 @@ def _build_project_view(
 
     def on_tab_change(e):
         idx = e.control.selected_index
+        tab_names = ["剧本", "矩阵", "管理", "审查", "设置"]
+        logger.debug("app: tab changed → {} ({})", idx, tab_names[idx] if idx < len(tab_names) else "?")
         tab_content_area.content = tab_content_builders[idx]()
         page.update()
 
@@ -324,6 +331,7 @@ def _build_project_view(
         length=5,
         selected_index=0,
         on_change=on_tab_change,
+        expand=True,
         content=ft.Column(
             expand=True,
             controls=[

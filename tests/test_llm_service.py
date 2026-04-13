@@ -6,7 +6,48 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import src.services.config as config_mod
-from src.services.llm_service import LLMService
+from src.services.llm_service import LLMService, _is_local_url
+
+
+class TestIsLocalUrl:
+    """Unit tests for the _is_local_url() helper."""
+
+    # --- should be detected as local ---
+    @pytest.mark.parametrize("url", [
+        "http://localhost:1234/v1",
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1/v1",
+        "http://[::1]/v1",              # IPv6 loopback — correct URL syntax
+        "http://lmac:1234/v1",          # single-label intranet hostname
+        "http://myserver/v1",            # single-label, no dots
+        "http://10.0.0.5:8080/v1",      # RFC-1918 class A
+        "http://172.16.0.1/v1",         # RFC-1918 class B lower bound
+        "http://172.31.255.255/v1",     # RFC-1918 class B upper bound
+        "http://192.168.1.100:1234/v1", # RFC-1918 class C
+        "http://169.254.0.1/v1",        # link-local
+    ])
+    def test_local_urls(self, url):
+        assert _is_local_url(url) is True, f"expected local: {url}"
+
+    # --- should NOT be detected as local (public / remote) ---
+    @pytest.mark.parametrize("url", [
+        "https://api.openai.com/v1",
+        "https://api.anthropic.com/v1",
+        "https://openrouter.ai/api/v1",
+        "http://my-vps.example.com:8080/v1",  # multi-label hostname → public
+        "http://8.8.8.8/v1",                  # Google DNS — globally routable
+        "http://1.1.1.1/v1",                  # Cloudflare DNS — globally routable
+    ])
+    def test_public_urls(self, url):
+        assert _is_local_url(url) is False, f"expected public: {url}"
+
+    # --- edge cases ---
+    def test_empty_string(self):
+        assert _is_local_url("") is False
+
+    def test_invalid_url(self):
+        # Should not raise, just return False
+        assert _is_local_url("not-a-url") is False
 
 
 class TestEnsureClient:
@@ -81,6 +122,44 @@ class TestEnsureClient:
         llm._ensure_client()
         assert llm.model == "gpt-4"
 
+    def test_local_url_bypasses_proxy(self, tmp_path, monkeypatch):
+        """Local base_url should use no-proxy transport."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "http://lmac:1234/v1",
+                "api_key": "",
+                "model": "gemma",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        with patch("src.services.llm_service._build_http_client") as mock_build:
+            mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
+            llm = LLMService()
+            llm._ensure_client()
+            mock_build.assert_called_once_with("http://lmac:1234/v1")
+
+    def test_public_url_uses_system_proxy(self, tmp_path, monkeypatch):
+        """Public base_url should use the default httpx client (system proxy)."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "api_base_url": "https://api.openai.com/v1",
+                "api_key": "sk-abc",
+                "model": "gpt-4",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        with patch("src.services.llm_service._build_http_client") as mock_build:
+            mock_build.return_value = MagicMock(spec=__import__("httpx").AsyncClient)
+            llm = LLMService()
+            llm._ensure_client()
+            mock_build.assert_called_once_with("https://api.openai.com/v1")
+
 
 class TestListModels:
     """Tests for list_models method."""
@@ -112,8 +191,6 @@ class TestListModels:
 
         llm = LLMService()
         llm._ensure_client()
-        # Patch the models.list on the already-initialized client, then
-        # prevent _ensure_client from recreating it during list_models()
         llm.client.models.list = AsyncMock(return_value=mock_response)
         monkeypatch.setattr(llm, "_ensure_client", lambda: None)
 

@@ -6,6 +6,7 @@ Project management: delete project (danger zone).
 """
 
 import flet as ft
+from loguru import logger
 
 from src.services.config import load_config, save_config
 from src.ui.state import app_state
@@ -70,13 +71,21 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
 
     # --- Save config handler ---
     def on_save_config(e):
-        save_config(_collect_config())
+        cfg = _collect_config()
+        logger.info(
+            "settings: save_config base_url={!r} model={!r} api_key_set={}",
+            cfg.get("api_base_url"),
+            cfg.get("model"),
+            bool(cfg.get("api_key")),
+        )
+        save_config(cfg)
         _show_snackbar("配置已保存", ft.Colors.GREEN)
 
     # --- Test connection handler ---
     async def on_test_connection(e):
         base_url = base_url_field.value.strip()
         model = model_field.value.strip()
+        logger.info("settings: test_connection clicked base_url={!r} model={!r}", base_url, model)
         if not base_url or not model:
             _show_snackbar("请先填写 API Base URL 和模型名称", ft.Colors.AMBER)
             return
@@ -90,13 +99,16 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
 
             llm = LLMService()
             reply = await llm.test_connection()
+            logger.info("settings: test_connection success reply={!r}", reply)
             _show_snackbar(f"连接成功！模型响应: {reply}", ft.Colors.GREEN)
         except Exception as exc:
-            _show_snackbar(f"连接失败: {str(exc)[:200]}", ft.Colors.RED)
+            logger.exception("settings: test_connection failed")
+            _show_snackbar(f"连接失败: {exc}", ft.Colors.RED)
 
     # --- Load models handler ---
     async def on_load_models(e):
         base_url = base_url_field.value.strip()
+        logger.info("settings: load_models clicked base_url={!r}", base_url)
         if not base_url:
             _show_snackbar("请先填写 API Base URL", ft.Colors.AMBER)
             return
@@ -110,6 +122,7 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
 
             llm = LLMService()
             models = await llm.list_models()
+            logger.info("settings: load_models got {} model(s)", len(models))
 
             if not models:
                 _show_snackbar("未发现可用模型", ft.Colors.AMBER)
@@ -155,7 +168,8 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
             _show_snackbar(f"已加载 {len(models)} 个模型", ft.Colors.GREEN)
 
         except Exception as exc:
-            _show_snackbar(f"加载模型失败: {str(exc)[:200]}", ft.Colors.RED)
+            logger.exception("settings: load_models failed")
+            _show_snackbar(f"加载模型失败: {exc}", ft.Colors.RED)
 
     # --- Action buttons ---
     save_button = ft.ElevatedButton(

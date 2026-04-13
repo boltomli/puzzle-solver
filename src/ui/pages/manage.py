@@ -6,6 +6,7 @@ Sections: 时间管理, 人物管理, 地点管理, 游戏规则, 手动添加�
 import re
 
 import flet as ft
+from loguru import logger
 
 from src.models.puzzle import CharacterStatus, HintType, SourceType
 from src.ui.state import app_state
@@ -121,6 +122,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     )
 
     def on_remove_slot(ts):
+        logger.info("manage: remove_time_slot {!r}", ts)
         app_state.remove_time_slot(ts)
         show_snackbar(f"已删除时间段 {ts}", ft.Colors.GREEN)
         refresh()
@@ -139,6 +141,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             show_snackbar(str(exc), ft.Colors.RED)
             return
         if added:
+            logger.info("manage: add_time_slot {!r}", val)
             show_snackbar(f"已添加时间段 {val}", ft.Colors.GREEN)
             ts_input.value = ""
             refresh()
@@ -268,6 +271,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def on_add_character(e):
         def do_add(name, aliases_str, desc, status_val):
             aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            logger.info("manage: add_character name={!r}", name)
             app_state.add_character(
                 name=name,
                 aliases=aliases,
@@ -283,6 +287,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         def handler(e):
             def do_update(name, aliases_str, desc, status_val):
                 aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                logger.info("manage: update_character id={!r} name={!r}", char.id, name)
                 app_state.update_character(
                     char.id,
                     name=name,
@@ -307,6 +312,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def make_delete_handler(char):
         def handler(e):
             def do_delete(e):
+                logger.info("manage: remove_character id={!r} name={!r}", char.id, char.name)
                 app_state.remove_character(char.id)
                 show_snackbar("删除成功", ft.Colors.GREEN)
                 dlg.open = False
@@ -454,6 +460,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def on_add_location(e):
         def do_add(name, aliases_str, desc):
             aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            logger.info("manage: add_location name={!r}", name)
             app_state.add_location(
                 name=name,
                 aliases=aliases,
@@ -468,6 +475,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         def handler(e):
             def do_update(name, aliases_str, desc):
                 aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                logger.info("manage: update_location id={!r} name={!r}", loc.id, name)
                 app_state.update_location(
                     loc.id,
                     name=name,
@@ -490,6 +498,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def make_delete_handler(loc):
         def handler(e):
             def do_delete(e):
+                logger.info("manage: remove_location id={!r} name={!r}", loc.id, loc.name)
                 app_state.remove_location(loc.id)
                 show_snackbar("删除成功", ft.Colors.GREEN)
                 dlg.open = False
@@ -586,6 +595,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     def make_delete_handler(hint):
         def handler(e):
+            logger.info("manage: remove_hint id={!r}", hint.id)
             app_state.remove_hint(hint.id)
             show_snackbar("删除成功", ft.Colors.GREEN)
             refresh()
@@ -617,6 +627,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 error_text.value = "内容不能为空"
                 page.update()
                 return
+            logger.info("manage: add_hint type={!r}", type_dropdown.value)
             app_state.add_hint(
                 hint_type=HintType(type_dropdown.value),
                 content=content,
@@ -753,6 +764,10 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             if not slot_dropdown.value:
                 show_snackbar("请选择时间段", ft.Colors.AMBER)
                 return
+            logger.info(
+                "manage: add_fact char={!r} loc={!r} ts={!r}",
+                char_dropdown.value, loc_dropdown.value, slot_dropdown.value,
+            )
             app_state.add_fact(
                 character_id=char_dropdown.value,
                 location_id=loc_dropdown.value,
@@ -801,6 +816,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             def make_fact_delete_handler(fact=f):
                 def handler(e):
                     def do_delete(e):
+                        logger.info("manage: remove_fact id={!r}", fact.id)
                         app_state.remove_fact(fact.id)
                         show_snackbar("删除成功", ft.Colors.GREEN)
                         dlg.open = False

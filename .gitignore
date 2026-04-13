@@ -12,3 +12,4 @@ wheels/
 # App data
 config.json
 data/
+logs/

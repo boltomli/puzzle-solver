@@ -196,40 +196,99 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         page.update()
         try:
             from src.services.deduction import DeductionService
+            from loguru import logger
 
             service = DeductionService()
             show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
             result = await service.run_deduction(proj)
             deductions_data = result.get("deductions", [])
+            contradictions = result.get("contradictions_detected", [])
+
+            # Build lookup maps for validation
+            char_by_id = {c.id: c for c in proj.characters}
+            loc_by_id = {l.id: l for l in proj.locations}
+            char_by_name = {c.name.lower(): c for c in proj.characters}
+            loc_by_name = {l.name.lower(): l for l in proj.locations}
+
             count = 0
+            # Collect unresolvable raw names/ids for the "add entities" dialog
+            unknown_char_names: dict[str, str] = {}  # raw_id -> display name
+            unknown_loc_names: dict[str, str] = {}
+
             for d_data in deductions_data:
+                raw_char_id = d_data.get("character_id", "")
+                raw_loc_id = d_data.get("location_id", "")
+
+                char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
+                loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+
+                if not char_obj:
+                    unknown_char_names[raw_char_id] = raw_char_id
+                if not loc_obj:
+                    unknown_loc_names[raw_loc_id] = raw_loc_id
+
+                if not char_obj or not loc_obj:
+                    logger.warning(
+                        "run_ai_deduction: skipping unresolvable deduction "
+                        "char_id={!r} loc_id={!r}",
+                        raw_char_id, raw_loc_id,
+                    )
+                    continue
+
                 ded = Deduction(
-                    character_id=d_data.get("character_id", ""),
-                    location_id=d_data.get("location_id", ""),
+                    character_id=char_obj.id,
+                    location_id=loc_obj.id,
                     time_slot=d_data.get("time_slot", "00:00"),
                     confidence=d_data.get("confidence", "medium"),
                     reasoning=d_data.get("reasoning", ""),
-                    supporting_script_ids=d_data.get(
-                        "supporting_script_ids", []
-                    ),
+                    supporting_script_ids=d_data.get("supporting_script_ids", []),
                     depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
                 )
                 app_state.add_deduction(ded)
                 count += 1
 
-            contradictions = result.get("contradictions_detected", [])
-            new_chars = result.get("new_characters_detected", [])
-            new_locs = result.get("new_locations_detected", [])
+            # Also collect AI-reported new entities (merge with unresolvable ones)
+            for ch in result.get("new_characters_detected", []):
+                name = ch.get("name", "").strip()
+                if name:
+                    unknown_char_names[name] = name
+            for lo in result.get("new_locations_detected", []):
+                name = lo.get("name", "").strip()
+                if name:
+                    unknown_loc_names[name] = name
 
-            msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
-            if contradictions:
-                msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
-            if new_chars:
-                msg_parts.append(f"🆕 发现 {len(new_chars)} 个新人物")
-            if new_locs:
-                msg_parts.append(f"🆕 发现 {len(new_locs)} 个新地点")
-            show_snackbar("；".join(msg_parts), ft.Colors.GREEN)
+            logger.info(
+                "run_ai_deduction: count={} unknown_chars={} unknown_locs={}",
+                count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
+            )
+
             refresh()
+
+            # Filter out already-registered entities
+            existing_char_names = {c.name for c in proj.characters}
+            existing_loc_names = {l.name for l in proj.locations}
+            final_unknown_chars = [
+                n for n in unknown_char_names.values() if n not in existing_char_names
+            ]
+            final_unknown_locs = [
+                n for n in unknown_loc_names.values() if n not in existing_loc_names
+            ]
+
+            if final_unknown_chars or final_unknown_locs:
+                _show_new_entities_dialog(
+                    page,
+                    [{"name": n} for n in final_unknown_chars],
+                    [{"name": n} for n in final_unknown_locs],
+                    run_ai_deduction,
+                    refresh,
+                    show_snackbar,
+                )
+            else:
+                msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
+                if contradictions:
+                    msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
+                show_snackbar("；".join(msg_parts), ft.Colors.GREEN)
+
         except ValueError as exc:
             show_snackbar(str(exc), ft.Colors.RED)
         except Exception as exc:
@@ -453,3 +512,118 @@ def _stat_item(value: str, label: str, color) -> ft.Control:
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         spacing=2,
     )
+
+
+def _show_new_entities_dialog(
+    page: ft.Page,
+    new_chars: list[dict],
+    new_locs: list[dict],
+    rerun_deduction,
+    refresh,
+    show_snackbar,
+):
+    """Show a dialog listing newly discovered entities with checkboxes to add them.
+
+    new_chars / new_locs: list of {"name": str} dicts, already filtered to
+    only contain names not yet registered in the project.
+    After adding, offers to re-run AI deduction immediately.
+    """
+    # --- Build checkbox rows ---
+    char_checks: list[tuple[ft.Checkbox, str]] = []
+    loc_checks: list[tuple[ft.Checkbox, str]] = []
+
+    content_rows: list[ft.Control] = []
+
+    if new_chars:
+        content_rows.append(
+            ft.Text("🆕 新发现的人物", size=15, weight=ft.FontWeight.BOLD)
+        )
+        for ch in new_chars:
+            name = ch.get("name", "").strip()
+            if not name:
+                continue
+            context = ch.get("context", "")
+            cb = ft.Checkbox(label=name, value=True)
+            char_checks.append((cb, name))
+            row_controls: list[ft.Control] = [cb]
+            if context:
+                row_controls.append(
+                    ft.Text(context, size=12, color=ft.Colors.GREY, expand=True)
+                )
+            content_rows.append(ft.Row(controls=row_controls, spacing=8))
+
+    if new_locs:
+        if new_chars:
+            content_rows.append(ft.Divider())
+        content_rows.append(
+            ft.Text("🆕 新发现的地点", size=15, weight=ft.FontWeight.BOLD)
+        )
+        for lo in new_locs:
+            name = lo.get("name", "").strip()
+            if not name:
+                continue
+            context = lo.get("context", "")
+            cb = ft.Checkbox(label=name, value=True)
+            loc_checks.append((cb, name))
+            row_controls = [cb]
+            if context:
+                row_controls.append(
+                    ft.Text(context, size=12, color=ft.Colors.GREY, expand=True)
+                )
+            content_rows.append(ft.Row(controls=row_controls, spacing=8))
+
+    if not char_checks and not loc_checks:
+        return
+
+    rerun_check = ft.Checkbox(label="添加后立即重新推断", value=True)
+    content_rows.append(ft.Divider())
+    content_rows.append(rerun_check)
+
+    def do_add(e):
+        added = 0
+        for cb, name in char_checks:
+            if cb.value:
+                existing = {c.name for c in app_state.current_project.characters}
+                if name not in existing:
+                    app_state.add_character(name=name)
+                    added += 1
+        for cb, name in loc_checks:
+            if cb.value:
+                existing = {l.name for l in app_state.current_project.locations}
+                if name not in existing:
+                    app_state.add_location(name=name)
+                    added += 1
+        dlg.open = False
+        page.update()
+        refresh()
+        show_snackbar(f"已添加 {added} 个实体", ft.Colors.GREEN)
+        if rerun_check.value and added > 0:
+            page.run_task(rerun_deduction, None)
+
+    def do_cancel(e):
+        dlg.open = False
+        page.update()
+
+    dlg = ft.AlertDialog(
+        title=ft.Text("🆕 AI 发现了新实体"),
+        content=ft.Container(
+            content=ft.Column(
+                controls=content_rows,
+                spacing=10,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            width=480,
+            height=min(80 + 48 * (len(char_checks) + len(loc_checks)), 500),
+        ),
+        actions=[
+            ft.TextButton("跳过", on_click=do_cancel),
+            ft.ElevatedButton(
+                "添加选中实体",
+                icon=ft.Icons.PLAYLIST_ADD,
+                on_click=do_add,
+            ),
+        ],
+    )
+    page.overlay.append(dlg)
+    dlg.open = True
+    page.update()
