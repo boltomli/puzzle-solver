@@ -12,7 +12,7 @@ from src.models.puzzle import (
     Rejection,
     SourceType,
 )
-from src.services.deduction import DeductionService
+from src.services.deduction import DeductionService, _extract_json
 
 
 @pytest.fixture
@@ -318,3 +318,36 @@ class TestCascadeDeduction:
             assert d.location_id
             assert d.time_slot
             assert d.reasoning
+
+
+class TestExtractJson:
+    """Tests for _extract_json helper that handles markdown-wrapped LLM responses."""
+
+    def test_clean_json(self):
+        """Clean JSON string parses correctly."""
+        assert _extract_json('{"key": "value"}') == {"key": "value"}
+
+    def test_json_in_code_fence_with_lang(self):
+        """JSON wrapped in ```json ... ``` extracts and parses."""
+        raw = '```json\n{"key": "value"}\n```'
+        assert _extract_json(raw) == {"key": "value"}
+
+    def test_json_in_code_fence_no_lang(self):
+        """JSON wrapped in ``` ... ``` (no language tag) extracts and parses."""
+        raw = '```\n{"key": "value"}\n```'
+        assert _extract_json(raw) == {"key": "value"}
+
+    def test_json_with_surrounding_text(self):
+        """JSON with leading/trailing text but valid { } block extracts."""
+        raw = 'Here is the result:\n{"key": "value"}\nDone.'
+        assert _extract_json(raw) == {"key": "value"}
+
+    def test_invalid_content_raises(self):
+        """Completely invalid content raises ValueError."""
+        with pytest.raises(ValueError, match="无法从 AI 响应中提取有效 JSON"):
+            _extract_json("no json here at all")
+
+    def test_empty_string_raises(self):
+        """Empty string raises ValueError."""
+        with pytest.raises(ValueError, match="无法从 AI 响应中提取有效 JSON"):
+            _extract_json("")
