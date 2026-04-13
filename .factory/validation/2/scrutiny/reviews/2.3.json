@@ -1,0 +1,28 @@
+{
+  "featureId": "2.3",
+  "reviewedAt": "2026-04-13T00:00:00Z",
+  "commitId": "1f3bfd1cc2db92234ca6f3bc5e186a926106e891",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The Flet settings page covers the requested API fields, model loading dialog, connection testing, and delete-project confirmation flow, but the deletion path leaves the app mounted on a stale project view after the underlying project is removed.",
+    "issues": [
+      {
+        "file": "src/ui/pages/settings.py",
+        "line": 225,
+        "severity": "blocking",
+        "description": "After `app_state.delete_project(proj_id)` succeeds, the handler only closes the dialog and shows a snackbar. It never triggers the app-level rebuild logic in `src/ui/app.py`, so the current settings tab and app bar can keep rendering the just-deleted project's name and controls until some unrelated navigation forces a refresh. This breaks the required delete-project flow because the UI does not reliably return to a valid post-deletion state."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The reviewer instructions expect a repo-local skill file at `.factory/skills/<skillName>/SKILL.md`, but this repo has no such file for `scrutiny-feature-reviewer`, so the review had to proceed without being able to inspect the referenced skill guidance.",
+      "evidence": "Attempting to read `C:\\exp\\puzzle-solver\\.factory\\skills\\scrutiny-feature-reviewer\\SKILL.md` returned ENOENT during evidence gathering."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed feature 2.3 via mission metadata, worker transcript skeleton, handoff, and commit `1f3bfd1`. The implementation mostly matches the requested Flet settings UI, but the delete-project flow leaves the page in an invalid stale state after deletion, so the review fails."
+}

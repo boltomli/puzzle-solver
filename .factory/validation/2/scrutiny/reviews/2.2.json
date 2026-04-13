@@ -1,0 +1,38 @@
+{
+  "featureId": "2.2",
+  "reviewedAt": "2026-04-13T16:00:00Z",
+  "commitId": "a395852",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The main Flet entry point and NiceGUI theme removal were implemented, but the app skeleton exceeded the feature boundary by wiring real tab pages instead of keeping all five tabs as placeholders.",
+    "issues": [
+      {
+        "file": "src/ui/app.py",
+        "line": 84,
+        "severity": "blocking",
+        "description": "Feature 2.2 explicitly required stub tab functions that return placeholder `ft.Text` controls until later features implement the real pages. `manage_content()` returns `build_manage_tab(page)` instead, and `settings_content()` returns `build_settings_tab(page)`, so this commit already integrates later feature work and does not satisfy the required stub-only behavior boundary for milestone 2.2."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The reviewer instructions say to read `.factory/library/architecture.md`, but this repository's `.factory/library/` only contains `patterns.md` and `user-testing.md`.",
+      "evidence": "Directory listing for `C:\\exp\\puzzle-solver\\.factory\\library` shows only `patterns.md` and `user-testing.md`; reading `C:\\exp\\puzzle-solver\\.factory\\library\\architecture.md` returned ENOENT."
+    },
+    {
+      "area": "conventions",
+      "observation": "The handoff summary says the feature delivered '5 stub tabs', but the committed code already wires real Manage and Settings pages. Mission guidance should more strongly reinforce not pulling in later-feature integrations even if those files already exist in the branch.",
+      "evidence": "Handoff `2026-04-13T07-40-01-473Z__2.2__20342617-0fb8-4dd6-9ffb-f49fb6f45979.json` claims '5 stub tabs', while `src/ui/app.py:84-90` returns `build_manage_tab(page)` and `build_settings_tab(page)` instead of placeholder text."
+    },
+    {
+      "area": "skills",
+      "observation": "Feature 2.2 has an empty `skillName`, but reviewer instructions expect comparing worker behavior to a skill file. There is no implementation skill to check for procedure compliance.",
+      "evidence": "`features.json` entry for feature `2.2` has `\"skillName\": \"\"`, and `.factory/skills/` in the repo only contains `worker.md`, not a feature-specific skill for this work."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed feature 2.2 against its contract, handoff, transcript skeleton, and commit diff. The feature fails review because `src/ui/app.py` does not keep all tab builders as placeholders: it wires Manage and Settings implementations from later features, violating the explicit stub-only requirement for this milestone slice."
+}
