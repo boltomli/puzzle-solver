@@ -1,0 +1,3 @@
+# Services Configuration
+# No long-running services needed for this project
+services: []

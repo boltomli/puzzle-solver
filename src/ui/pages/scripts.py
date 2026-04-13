@@ -3,8 +3,11 @@
 Allows adding, viewing, and deleting scripts (scene text from the game).
 """
 
+import re
+
 from nicegui import ui
 
+from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
 from src.services.config import load_config
 from src.ui.state import app_state
 
@@ -12,7 +15,7 @@ from src.ui.state import app_state
 def _is_api_configured() -> bool:
     """Check if API is configured for AI features."""
     config = load_config()
-    return bool(config.get("api_base_url") and config.get("api_key") and config.get("model"))
+    return bool(config.get("api_base_url") and config.get("model"))
 
 
 def scripts_tab_content():
@@ -48,12 +51,22 @@ def scripts_tab_content():
                     placeholder="你的备注或观察",
                 ).classes("w-full")
 
-                def save_script():
+                async def save_script():
                     text = raw_text_input.value.strip()
                     if not text:
                         ui.notify("请输入剧本文本", type="warning")
                         return
-                    app_state.add_script(
+
+                    # Check if project is empty before saving (for auto-trigger)
+                    proj = app_state.current_project
+                    project_is_empty = (
+                        proj is not None
+                        and not proj.characters
+                        and not proj.locations
+                        and not proj.time_slots
+                    )
+
+                    script = app_state.add_script(
                         raw_text=text,
                         title=title_input.value.strip() or None,
                         user_notes=notes_input.value.strip() or None,
@@ -64,6 +77,17 @@ def scripts_tab_content():
                     notes_input.value = ""
                     ui.notify("剧本已保存", type="positive")
                     script_list.refresh()
+
+                    # Auto-trigger script analysis on empty project
+                    if project_is_empty:
+                        if _is_api_configured():
+                            await _run_script_analysis(script.id)
+                        else:
+                            ui.notify(
+                                "请先在设置页面配置 API，以启用自动剧本分析",
+                                type="info",
+                                timeout=5000,
+                            )
 
                 with ui.row().classes("items-center gap-2"):
                     ui.button(
@@ -218,8 +242,59 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
     time_refs = result.get("time_references", [])
     direct_facts = result.get("direct_facts", [])
 
+    # Collect new entities for "Add All" button
+    new_chars = [ch for ch in chars_mentioned if ch.get("is_new", False)]
+    new_locs = [lo for lo in locs_mentioned if lo.get("is_new", False)]
+    # Collect new time slots (valid HH:MM that are not already in the project)
+    existing_time_slots = set(proj.time_slots) if proj else set()
+    new_time_refs = [
+        tr for tr in time_refs
+        if tr.get("time_slot")
+        and re.match(r"^\d{2}:\d{2}$", tr["time_slot"])
+        and tr["time_slot"] not in existing_time_slots
+    ]
+
     with ui.dialog() as dlg, ui.card().classes("w-[600px] max-h-[80vh]"):
         ui.label("📊 剧本分析结果").classes("text-h6 q-mb-md")
+
+        # --- "Add All" button for bulk entity addition (A1.4) ---
+        has_new_entities = new_chars or new_locs or new_time_refs
+        if has_new_entities:
+            def add_all_entities():
+                added_count = 0
+                for ch in new_chars:
+                    ch_name = ch.get("name", "")
+                    if ch_name:
+                        # Skip if already exists (may have been added individually)
+                        existing_names = {c.name for c in proj.characters}
+                        if ch_name not in existing_names:
+                            app_state.add_character(name=ch_name)
+                            added_count += 1
+                for lo in new_locs:
+                    lo_name = lo.get("name", "")
+                    if lo_name:
+                        existing_names = {l.name for l in proj.locations}
+                        if lo_name not in existing_names:
+                            app_state.add_location(name=lo_name)
+                            added_count += 1
+                for tr in new_time_refs:
+                    ts = tr.get("time_slot", "")
+                    if ts and ts not in proj.time_slots:
+                        try:
+                            app_state.add_time_slot(ts)
+                            added_count += 1
+                        except ValueError:
+                            pass
+                ui.notify(
+                    f"已批量添加 {added_count} 个实体（人物/地点/时间段）",
+                    type="positive",
+                )
+
+            ui.button(
+                "全部添加",
+                on_click=add_all_entities,
+                icon="playlist_add",
+            ).props("color=primary").classes("q-mb-md")
 
         # Characters found
         if chars_mentioned:
@@ -276,7 +351,7 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                             "添加", on_click=make_add_loc(name), icon="add_location"
                         ).props("dense color=primary outline size=sm")
 
-        # Time references
+        # Time references (A1.2 — with add buttons)
         if time_refs:
             ui.separator().classes("q-my-sm")
             ui.label(f"🕐 时间引用 ({len(time_refs)})").classes(
@@ -286,18 +361,39 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                 ts = tr.get("time_slot", "?")
                 ref = tr.get("reference_text", "")
                 explicit = tr.get("is_explicit", False)
-                with ui.row().classes("items-center gap-2 q-mb-xs"):
-                    if ts:
-                        ui.badge(ts, color="primary").classes("text-body2")
-                    ui.label(ref).classes("text-body2")
-                    if explicit:
-                        ui.badge("明确", color="positive").classes("text-caption")
+                is_valid_ts = bool(ts and re.match(r"^\d{2}:\d{2}$", ts))
+                is_new_ts = is_valid_ts and ts not in existing_time_slots
+                with ui.row().classes("w-full items-center justify-between q-mb-xs"):
+                    with ui.row().classes("items-center gap-2"):
+                        if ts:
+                            ui.badge(ts, color="primary").classes("text-body2")
+                        ui.label(ref).classes("text-body2")
+                        if explicit:
+                            ui.badge("明确", color="positive").classes("text-caption")
+                        if is_new_ts:
+                            ui.badge("新发现", color="orange").classes("text-caption")
+                    if is_new_ts:
+                        def make_add_time(time_slot):
+                            def handler():
+                                try:
+                                    app_state.add_time_slot(time_slot)
+                                    ui.notify(f"已添加时间段「{time_slot}」", type="positive")
+                                except ValueError as e:
+                                    ui.notify(str(e), type="warning")
+                            return handler
 
-        # Direct facts
+                        ui.button(
+                            "添加", on_click=make_add_time(ts), icon="more_time"
+                        ).props("dense color=primary outline size=sm")
+
+        # Direct facts → pending Deductions (A1.3)
         if direct_facts:
             ui.separator().classes("q-my-sm")
-            ui.label(f"✅ 直接事实 ({len(direct_facts)})").classes(
+            ui.label(f"📋 待审查推断 ({len(direct_facts)})").classes(
                 "text-subtitle1 text-weight-bold q-mb-sm"
+            )
+            deductions_created = _create_deductions_from_facts(
+                proj, direct_facts, script_id
             )
             for df in direct_facts:
                 char_n = df.get("character_name", "?")
@@ -314,6 +410,11 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                         ui.badge(conf, color="grey").classes("text-caption")
                     if evidence:
                         ui.label(evidence).classes("text-caption text-grey")
+            if deductions_created > 0:
+                ui.label(
+                    f"💡 已将 {deductions_created} 条事实加入审查队列，"
+                    "请前往「审查」标签页确认"
+                ).classes("text-body2 text-primary q-mt-sm")
 
         if not chars_mentioned and not locs_mentioned and not time_refs and not direct_facts:
             ui.label("未提取到有效信息").classes("text-body1 text-grey")
@@ -322,6 +423,58 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
             ui.button("关闭", on_click=dlg.close).props("flat")
 
     dlg.open()
+
+
+def _create_deductions_from_facts(
+    proj, direct_facts: list[dict], script_id: str
+) -> int:
+    """Convert direct_facts from analysis into pending Deduction objects.
+
+    Maps character_name and location_name back to IDs from the project.
+    Returns the number of deductions successfully created.
+    """
+    created = 0
+    for df in direct_facts:
+        char_name = df.get("character_name", "")
+        loc_name = df.get("location_name", "")
+        ts = df.get("time_slot", "")
+        confidence_str = df.get("confidence", "medium")
+        evidence = df.get("evidence", "")
+
+        # Map names to IDs
+        char = next(
+            (c for c in proj.characters if c.name == char_name), None
+        )
+        loc = next(
+            (l for l in proj.locations if l.name == loc_name), None
+        )
+
+        # Skip if we can't resolve both character and location
+        if not char or not loc:
+            continue
+        # Skip if time_slot is not valid
+        if not ts or not re.match(r"^\d{2}:\d{2}$", ts):
+            continue
+
+        # Map confidence string to enum
+        try:
+            conf = ConfidenceLevel(confidence_str)
+        except ValueError:
+            conf = ConfidenceLevel.medium
+
+        deduction = Deduction(
+            character_id=char.id,
+            location_id=loc.id,
+            time_slot=ts,
+            confidence=conf,
+            reasoning=evidence or f"剧本分析：{char_name} 在 {ts} 位于 {loc_name}",
+            supporting_script_ids=[script_id],
+            status=DeductionStatus.pending,
+        )
+        app_state.add_deduction(deduction)
+        created += 1
+
+    return created
 
 
 def _script_header(script) -> str:
