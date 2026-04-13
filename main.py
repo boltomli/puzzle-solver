@@ -23,7 +23,10 @@ def _handle_frozen_state() -> None:
 _handle_frozen_state()
 
 import flet as ft  # noqa: E402
+from src.logger import setup_logging  # noqa: E402
 from src.ui.app import main as app_main  # noqa: E402
+
+setup_logging()
 
 if __name__ == "__main__":
     web_mode = "--web" in sys.argv or os.environ.get(

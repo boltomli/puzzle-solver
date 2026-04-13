@@ -7,6 +7,8 @@ to produce deduction candidates for user review.
 import json
 import re
 
+from loguru import logger
+
 from src.models.puzzle import (
     ConfidenceLevel,
     Deduction,
@@ -44,6 +46,7 @@ def _extract_json(raw: str) -> dict:
         except (json.JSONDecodeError, ValueError):
             pass
 
+    logger.error("_extract_json: failed to parse LLM response (len={}): {!r}", len(raw), raw[:300])
     raise ValueError(f"无法从 AI 响应中提取有效 JSON。响应内容: {text[:200]}")
 
 
@@ -59,20 +62,62 @@ class DeductionService:
 
         Returns parsed response dict with deductions, new entities, contradictions.
         """
+        logger.info(
+            "run_deduction: project={!r} chars={} locs={} scripts={} facts={}",
+            project.name,
+            len(project.characters),
+            len(project.locations),
+            len(project.scripts),
+            len(project.facts),
+        )
         system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(project)
-        raw = await self.llm.chat(system_prompt, user_prompt)
-        return _extract_json(raw)
+        logger.debug("run_deduction: prompt built (user_prompt_len={})", len(user_prompt))
+        try:
+            raw = await self.llm.chat(system_prompt, user_prompt)
+            result = _extract_json(raw)
+            logger.info(
+                "run_deduction: got deductions={} new_chars={} new_locs={} contradictions={}",
+                len(result.get("deductions", [])),
+                len(result.get("new_characters_detected", [])),
+                len(result.get("new_locations_detected", [])),
+                len(result.get("contradictions_detected", [])),
+            )
+            return result
+        except Exception:
+            logger.exception("run_deduction: failed for project={!r}", project.name)
+            raise
 
     async def analyze_script(self, project: Project, script: Script) -> dict:
         """Run a lightweight script analysis.
 
         Returns parsed response with characters, locations, time refs, direct facts.
         """
+        logger.info(
+            "analyze_script: project={!r} script={!r} (len={})",
+            project.name,
+            script.title or "Untitled",
+            len(script.raw_text),
+        )
         system_prompt, user_prompt = self.prompt_engine.build_script_analysis_prompt(
             project, script
         )
-        raw = await self.llm.chat(system_prompt, user_prompt)
-        return _extract_json(raw)
+        logger.debug("analyze_script: prompt built (user_prompt_len={})", len(user_prompt))
+        try:
+            raw = await self.llm.chat(system_prompt, user_prompt)
+            result = _extract_json(raw)
+            logger.info(
+                "analyze_script: got chars={} locs={} time_refs={} direct_facts={}",
+                len(result.get("characters_mentioned", [])),
+                len(result.get("locations_mentioned", [])),
+                len(result.get("time_references", [])),
+                len(result.get("direct_facts", [])),
+            )
+            return result
+        except Exception:
+            logger.exception(
+                "analyze_script: failed for script={!r}", script.title or "Untitled"
+            )
+            raise
 
     @staticmethod
     def run_cascade(project: Project) -> list[Deduction]:
@@ -84,29 +129,33 @@ class DeductionService:
 
         Returns list of new certain deductions.
         """
+        logger.info(
+            "run_cascade: project={!r} chars={} locs={} slots={} facts={}",
+            project.name,
+            len(project.characters),
+            len(project.locations),
+            len(project.time_slots),
+            len(project.facts),
+        )
         new_deductions: list[Deduction] = []
 
         # Strategy 1: For each unfilled character+time, check possible locations
         for char in project.characters:
             for ts in project.time_slots:
-                # Skip if already has a fact
                 if any(
                     f.character_id == char.id and f.time_slot == ts
                     for f in project.facts
                 ):
                     continue
 
-                # Find possible locations
                 possible = []
                 for loc in project.locations:
-                    # Is another char confirmed here at this time?
                     occupied = any(
                         f.location_id == loc.id
                         and f.time_slot == ts
                         and f.character_id != char.id
                         for f in project.facts
                     )
-                    # Was this rejected?
                     rejected = any(
                         r.character_id == char.id
                         and r.location_id == loc.id
@@ -128,11 +177,13 @@ class DeductionService:
                         ),
                     )
                     new_deductions.append(ded)
+                    logger.debug(
+                        "run_cascade: strategy1 {} @ {} → {}", char.name, ts, possible[0].name
+                    )
 
         # Strategy 2: For each unfilled location+time, check possible characters
         for loc in project.locations:
             for ts in project.time_slots:
-                # Is it already occupied?
                 if any(
                     f.location_id == loc.id and f.time_slot == ts
                     for f in project.facts
@@ -141,14 +192,12 @@ class DeductionService:
 
                 possible = []
                 for char in project.characters:
-                    # Is this char confirmed elsewhere at this time?
                     elsewhere = any(
                         f.character_id == char.id
                         and f.time_slot == ts
                         and f.location_id != loc.id
                         for f in project.facts
                     )
-                    # Was this rejected?
                     rejected = any(
                         r.character_id == char.id
                         and r.location_id == loc.id
@@ -159,7 +208,6 @@ class DeductionService:
                         possible.append(char)
 
                 if len(possible) == 1:
-                    # Check we haven't already deduced this from strategy 1
                     already = any(
                         d.character_id == possible[0].id
                         and d.location_id == loc.id
@@ -178,5 +226,10 @@ class DeductionService:
                             ),
                         )
                         new_deductions.append(ded)
+                        logger.debug(
+                            "run_cascade: strategy2 {} @ {} → {}",
+                            possible[0].name, ts, loc.name,
+                        )
 
+        logger.info("run_cascade: found {} new certain deduction(s)", len(new_deductions))
         return new_deductions

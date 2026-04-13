@@ -7,6 +7,8 @@ Uses Pydantic v2 model_dump_json() / model_validate_json() for serialization.
 import os
 from pathlib import Path
 
+from loguru import logger
+
 from src.models.puzzle import Project, ProjectSummary
 
 
@@ -15,7 +17,6 @@ class JsonStore:
 
     def __init__(self, data_dir: str | Path | None = None):
         if data_dir is None:
-            # Default to data/ in the project root
             data_dir = Path(__file__).resolve().parent.parent.parent / "data"
         self.data_dir = Path(data_dir)
         self._ensure_data_dir()
@@ -31,7 +32,9 @@ class JsonStore:
     def list_projects(self) -> list[ProjectSummary]:
         """List all projects as lightweight summaries."""
         summaries = []
-        for file_path in sorted(self.data_dir.glob("*.json")):
+        files = sorted(self.data_dir.glob("*.json"))
+        logger.debug("list_projects: scanning {} file(s) in {}", len(files), self.data_dir)
+        for file_path in files:
             try:
                 json_data = file_path.read_text(encoding="utf-8")
                 project = Project.model_validate_json(json_data)
@@ -47,9 +50,10 @@ class JsonStore:
                     updated_at=project.updated_at,
                 )
                 summaries.append(summary)
-            except Exception:
-                # Skip corrupted files
+            except Exception as exc:
+                logger.warning("list_projects: skipping corrupt file {}: {}", file_path, exc)
                 continue
+        logger.debug("list_projects: returned {} project(s)", len(summaries))
         return summaries
 
     def load_project(self, project_id: str) -> Project:
@@ -61,9 +65,17 @@ class JsonStore:
         """
         file_path = self._project_path(project_id)
         if not file_path.exists():
+            logger.warning("load_project: file not found for id={!r}", project_id)
             raise FileNotFoundError(f"Project not found: {project_id}")
         json_data = file_path.read_text(encoding="utf-8")
-        return Project.model_validate_json(json_data)
+        project = Project.model_validate_json(json_data)
+        logger.info(
+            "load_project: loaded {!r} (id={}) chars={} locs={} scripts={} facts={}",
+            project.name, project_id,
+            len(project.characters), len(project.locations),
+            len(project.scripts), len(project.facts),
+        )
+        return project
 
     def save_project(self, project: Project) -> None:
         """Save a project to disk. Overwrites existing file if present."""
@@ -71,6 +83,10 @@ class JsonStore:
         file_path = self._project_path(project.id)
         json_data = project.model_dump_json(indent=2)
         file_path.write_text(json_data, encoding="utf-8")
+        logger.debug(
+            "save_project: saved {!r} (id={}) to {}",
+            project.name, project.id, file_path,
+        )
 
     def create_project(
         self,
@@ -78,22 +94,14 @@ class JsonStore:
         description: str | None = None,
         time_slots: list[str] | None = None,
     ) -> Project:
-        """Create a new project and save it to disk.
-
-        Args:
-            name: Project name.
-            description: Optional project description.
-            time_slots: List of time slots in HH:MM format.
-
-        Returns:
-            The newly created Project.
-        """
+        """Create a new project and save it to disk."""
         project = Project(
             name=name,
             description=description,
             time_slots=time_slots or [],
         )
         self.save_project(project)
+        logger.info("create_project: created {!r} (id={})", name, project.id)
         return project
 
     def delete_project(self, project_id: str) -> None:
@@ -104,5 +112,7 @@ class JsonStore:
         """
         file_path = self._project_path(project_id)
         if not file_path.exists():
+            logger.warning("delete_project: file not found for id={!r}", project_id)
             raise FileNotFoundError(f"Project not found: {project_id}")
         os.remove(file_path)
+        logger.info("delete_project: deleted id={!r}", project_id)

@@ -51,41 +51,44 @@ def build_review_tab(page: ft.Page) -> ft.Control:
             scroll=ft.ScrollMode.AUTO,
         )
 
+    # --- Outer container holds the live content; refresh() swaps it in-place ---
+    outer_container = ft.Container(expand=True)
+
+    def refresh():
+        outer_container.content = _build_content(page, refresh)
+        page.update()
+
+    outer_container.content = _build_content(page, refresh)
+
+    return ft.Column(
+        controls=[
+            ft.Text("推断审查", size=28, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            outer_container,
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        spacing=10,
+        expand=True,
+    )
+
+
+def _build_content(page: ft.Page, refresh) -> ft.Control:
+    """Build the live inner content of the review tab (pending cards + history)."""
+    proj = app_state.current_project
+    if not proj:
+        return ft.Text("请先选择或创建一个项目", color=ft.Colors.GREY)
+
     # Build lookup maps
     char_map = {c.id: c.name for c in proj.characters}
     loc_map = {loc.id: loc.name for loc in proj.locations}
-
-    def refresh():
-        """Rebuild the review tab and update the page."""
-        # Find the tab content container and replace its content
-        for ctrl in page.controls:
-            if isinstance(ctrl, ft.Column):
-                # Walk the tree to find the tab_content_area
-                _replace_in_tree(ctrl, page)
-                break
-        page.update()
-
-    def _replace_in_tree(parent, page):
-        """Find the tab content container and replace with new review content."""
-        if hasattr(parent, 'controls'):
-            for i, ctrl in enumerate(parent.controls):
-                if isinstance(ctrl, ft.Container) and ctrl.expand:
-                    ctrl.content = build_review_tab(page)
-                    return True
-                if _replace_in_tree(ctrl, page):
-                    return True
-        return False
 
     # --- Pending deductions ---
     pending = [d for d in proj.deductions if d.status == DeductionStatus.pending]
     pending.sort(key=lambda d: _CONFIDENCE_ORDER.get(d.confidence, 99))
 
-    controls: list[ft.Control] = [
-        ft.Text("推断审查", size=24, weight=ft.FontWeight.BOLD),
-    ]
+    controls: list[ft.Control] = []
 
     if not pending:
-        # Empty state
         controls.append(
             ft.Card(
                 content=ft.Container(
@@ -116,10 +119,7 @@ def build_review_tab(page: ft.Page) -> ft.Control:
             )
         )
     else:
-        # Pending count and batch actions
-        controls.append(
-            ft.Text(f"共 {len(pending)} 条待审查推断", size=16),
-        )
+        controls.append(ft.Text(f"共 {len(pending)} 条待审查推断", size=16))
 
         def clear_all(e):
             count = app_state.clear_pending_deductions()
@@ -149,7 +149,6 @@ def build_review_tab(page: ft.Page) -> ft.Control:
             conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
             conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
 
-            # Confidence badge
             confidence_badge = ft.Container(
                 content=ft.Text(
                     f"置信度: {conf_label}",
@@ -161,7 +160,6 @@ def build_review_tab(page: ft.Page) -> ft.Control:
                 padding=ft.Padding.symmetric(horizontal=10, vertical=4),
             )
 
-            # Header row
             header_row = ft.Row(
                 controls=[
                     ft.Icon(ft.Icons.LIGHTBULB, color=ft.Colors.AMBER),
@@ -171,39 +169,26 @@ def build_review_tab(page: ft.Page) -> ft.Control:
                 spacing=8,
             )
 
-            # Entity info row
             entity_row = ft.Row(
                 controls=[
                     ft.Column(
                         controls=[
                             ft.Text("人物", size=12, color=ft.Colors.GREY),
-                            ft.Text(
-                                char_name,
-                                size=16,
-                                weight=ft.FontWeight.BOLD,
-                            ),
+                            ft.Text(char_name, size=16, weight=ft.FontWeight.BOLD),
                         ],
                         spacing=2,
                     ),
                     ft.Column(
                         controls=[
                             ft.Text("地点", size=12, color=ft.Colors.GREY),
-                            ft.Text(
-                                loc_name,
-                                size=16,
-                                weight=ft.FontWeight.BOLD,
-                            ),
+                            ft.Text(loc_name, size=16, weight=ft.FontWeight.BOLD),
                         ],
                         spacing=2,
                     ),
                     ft.Column(
                         controls=[
                             ft.Text("时间", size=12, color=ft.Colors.GREY),
-                            ft.Text(
-                                ded.time_slot,
-                                size=16,
-                                weight=ft.FontWeight.BOLD,
-                            ),
+                            ft.Text(ded.time_slot, size=16, weight=ft.FontWeight.BOLD),
                         ],
                         spacing=2,
                     ),
@@ -211,68 +196,51 @@ def build_review_tab(page: ft.Page) -> ft.Control:
                 spacing=40,
             )
 
-            # Reasoning section
             card_controls: list[ft.Control] = [header_row, entity_row]
             if ded.reasoning:
                 card_controls.append(
                     ft.Column(
                         controls=[
-                            ft.Text(
-                                "推理过程",
-                                size=12,
-                                color=ft.Colors.GREY,
-                            ),
+                            ft.Text("推理过程", size=12, color=ft.Colors.GREY),
                             ft.Text(ded.reasoning, size=14),
                         ],
                         spacing=4,
                     )
                 )
 
-            # --- Accept handler ---
             def make_accept_handler(ded_id):
                 def handler(e):
                     fact = app_state.accept_deduction(ded_id)
                     if fact:
-                        # Auto-cascade
                         try:
                             new_deds = DeductionService.run_cascade(proj)
                             count = 0
-                            for ded in new_deds:
+                            for new_ded in new_deds:
                                 already = any(
-                                    d.character_id == ded.character_id
-                                    and d.location_id == ded.location_id
-                                    and d.time_slot == ded.time_slot
+                                    d.character_id == new_ded.character_id
+                                    and d.location_id == new_ded.location_id
+                                    and d.time_slot == new_ded.time_slot
                                     and d.status == DeductionStatus.pending
                                     for d in proj.deductions
                                 )
                                 if not already:
-                                    app_state.add_deduction(ded)
+                                    app_state.add_deduction(new_ded)
                                     count += 1
                             page.snack_bar = ft.SnackBar(
-                                ft.Text(
-                                    f"已接受推断。消元发现 {count} 条新推断"
-                                )
+                                ft.Text(f"已接受推断。消元发现 {count} 条新推断")
                             )
                             page.snack_bar.open = True
                         except Exception:
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text("已接受推断")
-                            )
+                            page.snack_bar = ft.SnackBar(ft.Text("已接受推断"))
                             page.snack_bar.open = True
                     refresh()
-
                 return handler
 
-            # --- Reject handler ---
             def make_reject_handler(ded_id, d_char, d_loc, d_ts):
                 def handler(e):
-                    _show_reject_dialog(
-                        page, ded_id, d_char, d_loc, d_ts, refresh
-                    )
-
+                    _show_reject_dialog(page, ded_id, d_char, d_loc, d_ts, refresh)
                 return handler
 
-            # Action buttons row
             action_row = ft.Row(
                 controls=[
                     ft.ElevatedButton(
@@ -297,10 +265,7 @@ def build_review_tab(page: ft.Page) -> ft.Control:
             controls.append(
                 ft.Card(
                     content=ft.Container(
-                        content=ft.Column(
-                            controls=card_controls,
-                            spacing=12,
-                        ),
+                        content=ft.Column(controls=card_controls, spacing=12),
                         padding=20,
                     ),
                 )
@@ -312,11 +277,7 @@ def build_review_tab(page: ft.Page) -> ft.Control:
         controls.append(ft.Divider())
         controls.append(history_control)
 
-    return ft.Column(
-        controls=controls,
-        scroll=ft.ScrollMode.AUTO,
-        spacing=12,
-    )
+    return ft.Column(controls=controls, spacing=12)
 
 
 def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:

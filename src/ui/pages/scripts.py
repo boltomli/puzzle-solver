@@ -7,6 +7,7 @@ Provides AI-powered script analysis with entity extraction and deduction creatio
 import re
 
 import flet as ft
+from loguru import logger
 
 from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
 from src.services.config import load_config
@@ -36,18 +37,19 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     confidence_str = fact_dict.get("confidence", "medium")
     evidence = fact_dict.get("evidence", "")
 
-    # Map names to IDs
     char = next((c for c in proj.characters if c.name == char_name), None)
     loc = next((l for l in proj.locations if l.name == loc_name), None)
 
-    # Skip if we can't resolve both character and location
     if not char or not loc:
+        logger.warning(
+            "_create_single_deduction: cannot resolve char={!r}(found={}) loc={!r}(found={}) ts={!r}",
+            char_name, char is not None, loc_name, loc is not None, ts,
+        )
         return False
-    # Skip if time_slot is not valid
     if not ts or not re.match(r"^\d{2}:\d{2}$", ts):
+        logger.warning("_create_single_deduction: invalid time_slot={!r}", ts)
         return False
 
-    # Map confidence string to enum
     try:
         conf = ConfidenceLevel(confidence_str)
     except ValueError:
@@ -63,6 +65,10 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
         status=DeductionStatus.pending,
     )
     app_state.add_deduction(deduction)
+    logger.info(
+        "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
+        char_name, loc_name, ts, conf,
+    )
     return True
 
 
@@ -923,6 +929,7 @@ async def _run_script_analysis(
         return
 
     # Show progress
+    logger.info("scripts: starting analyze_script for script_id={!r}", script_id)
     show_snackbar("🤖 正在分析剧本...", ft.Colors.BLUE)
 
     try:
@@ -932,6 +939,10 @@ async def _run_script_analysis(
         result = await service.analyze_script(proj, script)
 
         app_state.save_script_analysis(script_id, result)
+        logger.info(
+            "scripts: analyze_script done script_id={!r} direct_facts={}",
+            script_id, len(result.get("direct_facts", [])),
+        )
         if on_complete:
             try:
                 on_complete()
@@ -940,8 +951,10 @@ async def _run_script_analysis(
         refresh()
         _show_analysis_results_dialog(page, proj, result, script_id, refresh, show_snackbar)
     except ValueError as e:
+        logger.exception("scripts: analyze_script ValueError for script_id={!r}", script_id)
         show_snackbar(str(e), ft.Colors.RED)
     except Exception as e:
+        logger.exception("scripts: analyze_script failed for script_id={!r}", script_id)
         show_snackbar(f"剧本分析失败: {str(e)[:200]}", ft.Colors.RED)
 
 
