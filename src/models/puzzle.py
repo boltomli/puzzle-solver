@@ -104,6 +104,7 @@ class Script(BaseModel):
     title: Optional[str] = None
     raw_text: str
     metadata: ScriptMetadata = Field(default_factory=ScriptMetadata)
+    analysis_result: Optional[dict] = None  # Cached AI analysis result
     added_at: datetime = Field(default_factory=datetime.now)
 
 

@@ -278,3 +278,82 @@ class TestScriptAnalysisPrompt:
         script = sample_project.scripts[0]
         system_prompt, _ = engine.build_script_analysis_prompt(sample_project, script)
         assert "analyzer" in system_prompt.lower() or "script" in system_prompt.lower()
+
+    def test_script_analysis_contains_confirmed_facts(self, engine, sample_project):
+        """Script analysis prompt should include confirmed facts with resolved names."""
+        script = sample_project.scripts[0]
+        _, user_prompt = engine.build_script_analysis_prompt(sample_project, script)
+        assert "Confirmed Facts" in user_prompt
+        assert "维多利亚夫人" in user_prompt
+        assert "图书馆" in user_prompt
+        assert "14:00" in user_prompt
+
+    def test_script_analysis_contains_hints(self, engine, sample_project):
+        """Script analysis prompt should include game rules and hints."""
+        script = sample_project.scripts[0]
+        _, user_prompt = engine.build_script_analysis_prompt(sample_project, script)
+        assert "Game Rules & Hints" in user_prompt
+        assert "[RULE]" in user_prompt
+        assert "每个人每个时间段只能在一个地点" in user_prompt
+        assert "[HINT]" in user_prompt
+        assert "从不进厨房" in user_prompt
+
+    def test_script_analysis_contains_other_scripts(self, engine):
+        """When analyzing one script, other scripts should appear in the prompt."""
+        project = Project(
+            name="Multi-Script Test",
+            time_slots=["14:00"],
+            characters=[Character(id="c1", name="Alice")],
+            locations=[Location(id="l1", name="Room")],
+            scripts=[
+                Script(
+                    id="script-A",
+                    title="第一幕",
+                    raw_text="Alice 在房间里看书。",
+                    metadata=ScriptMetadata(source_order=1),
+                ),
+                Script(
+                    id="script-B",
+                    title="第二幕",
+                    raw_text="Alice 离开了房间。",
+                    metadata=ScriptMetadata(source_order=2),
+                ),
+            ],
+        )
+        # Analyze script-B — script-A should be included as cross-reference
+        target_script = project.scripts[1]
+        _, user_prompt = engine.build_script_analysis_prompt(project, target_script)
+        assert "Other Scripts" in user_prompt
+        assert "第一幕" in user_prompt
+        assert "Alice 在房间里看书" in user_prompt
+
+    def test_script_analysis_excludes_target_script_from_others(self, engine):
+        """The script being analyzed should NOT appear in 'Other Scripts' section."""
+        project = Project(
+            name="Exclusion Test",
+            time_slots=["14:00"],
+            characters=[Character(id="c1", name="Alice")],
+            locations=[Location(id="l1", name="Room")],
+            scripts=[
+                Script(
+                    id="script-A",
+                    title="第一幕",
+                    raw_text="Alice 在房间里看书。",
+                    metadata=ScriptMetadata(source_order=1),
+                ),
+                Script(
+                    id="script-B",
+                    title="第二幕",
+                    raw_text="Alice 离开了房间。这是独特内容。",
+                    metadata=ScriptMetadata(source_order=2),
+                ),
+            ],
+        )
+        # Analyze script-B — only script-A should be in "Other Scripts"
+        target_script = project.scripts[1]
+        _, user_prompt = engine.build_script_analysis_prompt(project, target_script)
+        # The other scripts section should contain script-A but not script-B title
+        # Script-B's text appears in "New Script Text" section, not in "Other Scripts"
+        other_scripts_section = user_prompt.split("### Other Scripts")[1].split("### New Script Text")[0]
+        assert "第一幕" in other_scripts_section
+        assert "第二幕" not in other_scripts_section

@@ -161,7 +161,6 @@ def scripts_tab_content():
 
                             # Action buttons row
                             with ui.row().classes("justify-end gap-2"):
-                                # Script analysis button
                                 api_ok = _is_api_configured()
 
                                 def make_analyze_handler(s_id):
@@ -169,15 +168,43 @@ def scripts_tab_content():
                                         await _run_script_analysis(s_id)
                                     return handler
 
-                                analyze_btn = ui.button(
-                                    "🤖 分析此剧本",
-                                    on_click=make_analyze_handler(script.id),
-                                    icon="psychology",
-                                ).props(
-                                    f"{'color=secondary' if api_ok else 'color=grey disabled'} dense outline"
-                                )
-                                if not api_ok:
-                                    analyze_btn.tooltip("请先在设置页面配置 API")
+                                def make_view_results_handler(s_proj, s_result, s_id):
+                                    def handler():
+                                        _show_analysis_results_dialog(s_proj, s_result, s_id)
+                                    return handler
+
+                                if script.analysis_result is not None:
+                                    # Has cached results — show view + re-analyze
+                                    ui.button(
+                                        "📊 查看分析结果",
+                                        on_click=make_view_results_handler(
+                                            app_state.current_project,
+                                            script.analysis_result,
+                                            script.id,
+                                        ),
+                                        icon="assessment",
+                                    ).props("color=positive dense")
+
+                                    reanalyze_btn = ui.button(
+                                        "🔄 重新分析",
+                                        on_click=make_analyze_handler(script.id),
+                                        icon="refresh",
+                                    ).props(
+                                        f"{'color=secondary' if api_ok else 'color=grey disabled'} dense outline size=sm"
+                                    )
+                                    if not api_ok:
+                                        reanalyze_btn.tooltip("请先在设置页面配置 API")
+                                else:
+                                    # No cached results — show analyze button
+                                    analyze_btn = ui.button(
+                                        "🤖 分析此剧本",
+                                        on_click=make_analyze_handler(script.id),
+                                        icon="psychology",
+                                    ).props(
+                                        f"{'color=secondary' if api_ok else 'color=grey disabled'} dense outline"
+                                    )
+                                    if not api_ok:
+                                        analyze_btn.tooltip("请先在设置页面配置 API")
 
                                 # Delete button
                                 def make_delete_handler(s_id, s_title):
@@ -239,6 +266,8 @@ async def _run_script_analysis(script_id: str):
         ui.notify("🤖 正在分析剧本...", type="info")
         result = await service.analyze_script(proj, script)
 
+        app_state.save_script_analysis(script_id, result)  # Cache it
+        script_list.refresh()  # Refresh to show the "view results" button
         _show_analysis_results_dialog(proj, result, script_id)
     except ValueError as e:
         ui.notify(str(e), type="negative")
@@ -258,7 +287,7 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
     time_refs = result.get("time_references", [])
     direct_facts = result.get("direct_facts", [])
 
-    # Collect new entities for "Add All" button
+    # Collect new entities for "Add All Entities" button
     new_chars = [ch for ch in chars_mentioned if ch.get("is_new", False)]
     new_locs = [lo for lo in locs_mentioned if lo.get("is_new", False)]
     # Collect new time slots (valid HH:MM that are not already in the project)
@@ -270,10 +299,13 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
         and tr["time_slot"] not in existing_time_slots
     ]
 
+    # Track which facts have been added as deductions (by index)
+    added_fact_indices: set[int] = set()
+
     with ui.dialog() as dlg, ui.card().classes("w-[600px] max-h-[80vh]"):
         ui.label("📊 剧本分析结果").classes("text-h6 q-mb-md")
 
-        # --- "Add All" button for bulk entity addition (A1.4) ---
+        # --- "Add All Entities" button for bulk entity addition ---
         has_new_entities = new_chars or new_locs or new_time_refs
         if has_new_entities:
             def add_all_entities():
@@ -306,11 +338,12 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                     type="positive",
                 )
 
-            ui.button(
-                "全部添加",
+            add_all_btn = ui.button(
+                "全部添加实体",
                 on_click=add_all_entities,
                 icon="playlist_add",
             ).props("color=primary").classes("q-mb-md")
+            add_all_btn.tooltip("仅添加新发现的人物、地点和时间段，不包含推断事实")
 
         # Characters found
         if chars_mentioned:
@@ -367,7 +400,7 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                             "添加", on_click=make_add_loc(name), icon="add_location"
                         ).props("dense color=primary outline size=sm")
 
-        # Time references (A1.2 — with add buttons)
+        # Time references (with add buttons)
         if time_refs:
             ui.separator().classes("q-my-sm")
             ui.label(f"🕐 时间引用 ({len(time_refs)})").classes(
@@ -402,40 +435,105 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
                             "添加", on_click=make_add_time(ts), icon="more_time"
                         ).props("dense color=primary outline size=sm")
 
-        # Direct facts → pending Deductions (A1.3)
+        # Direct facts — user-controlled deduction creation
         if direct_facts:
             ui.separator().classes("q-my-sm")
-            ui.label(f"📋 待审查推断 ({len(direct_facts)})").classes(
-                "text-subtitle1 text-weight-bold q-mb-sm"
-            )
-            deductions_created = _create_deductions_from_facts(
-                proj, direct_facts, script_id
-            )
-            for df in direct_facts:
+
+            with ui.row().classes("w-full items-center justify-between q-mb-sm"):
+                ui.label(f"📋 可添加的推断 ({len(direct_facts)})").classes(
+                    "text-subtitle1 text-weight-bold"
+                )
+
+                def add_all_facts_handler():
+                    created = _create_deductions_from_facts(
+                        proj, direct_facts, script_id
+                    )
+                    if created > 0:
+                        ui.notify(
+                            f"已将 {created} 条推断加入审查队列",
+                            type="positive",
+                        )
+                        # Mark all as added
+                        for i in range(len(direct_facts)):
+                            added_fact_indices.add(i)
+                    else:
+                        ui.notify(
+                            "没有可添加的推断（请先添加对应的人物和地点）",
+                            type="warning",
+                        )
+
+                ui.button(
+                    "全部添加到审查队列",
+                    on_click=add_all_facts_handler,
+                    icon="playlist_add_check",
+                ).props("dense color=secondary outline size=sm")
+
+            ui.label(
+                "💡 点击「添加到审查」将推断加入审查队列，或点击「全部添加」一次性添加"
+            ).classes("text-caption text-grey q-mb-sm")
+
+            for idx, df in enumerate(direct_facts):
                 char_n = df.get("character_name", "?")
                 loc_n = df.get("location_name", "?")
                 ts = df.get("time_slot", "?")
                 conf = df.get("confidence", "medium")
                 evidence = df.get("evidence", "")
+
                 with ui.card().classes("w-full q-mb-sm q-pa-sm"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.label(f"👤 {char_n}").classes("text-weight-bold")
-                        ui.label(f"📍 {loc_n}")
-                        if ts:
-                            ui.badge(ts, color="primary")
-                        ui.badge(conf, color="grey").classes("text-caption")
+                    with ui.row().classes("w-full items-center justify-between"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label(f"👤 {char_n}").classes("text-weight-bold")
+                            ui.label(f"📍 {loc_n}")
+                            if ts:
+                                ui.badge(ts, color="primary")
+                            ui.badge(conf, color="grey").classes("text-caption")
+
+                        # Per-fact "添加到审查" button
+                        def make_add_single_fact(fact_idx, fact_dict):
+                            def handler(btn_ref=None):
+                                # Check if character and location can be resolved
+                                success = _create_single_deduction(
+                                    proj, fact_dict, script_id
+                                )
+                                if success:
+                                    added_fact_indices.add(fact_idx)
+                                    ui.notify("已添加到审查队列", type="positive")
+                                else:
+                                    ui.notify(
+                                        "无法添加：请先添加对应的人物和地点",
+                                        type="warning",
+                                    )
+                            return handler
+
+                        # Check if character and location can be resolved
+                        char = next(
+                            (c for c in proj.characters if c.name == char_n), None
+                        )
+                        loc = next(
+                            (l for l in proj.locations if l.name == loc_n), None
+                        )
+                        can_resolve = char is not None and loc is not None
+
+                        if can_resolve:
+                            add_btn = ui.button(
+                                "添加到审查",
+                                on_click=make_add_single_fact(idx, df),
+                                icon="add_task",
+                            ).props("dense color=secondary outline size=sm")
+                        else:
+                            add_btn = ui.button(
+                                "添加到审查",
+                                icon="add_task",
+                            ).props("dense color=grey disabled size=sm")
+                            add_btn.tooltip("请先添加对应的人物和地点")
+
                     if evidence:
                         ui.label(evidence).classes("text-caption text-grey")
-            if deductions_created > 0:
-                ui.label(
-                    f"💡 已将 {deductions_created} 条事实加入审查队列，"
-                    "请前往「审查」标签页确认"
-                ).classes("text-body2 text-primary q-mt-sm")
 
         if not chars_mentioned and not locs_mentioned and not time_refs and not direct_facts:
             ui.label("未提取到有效信息").classes("text-body1 text-grey")
 
-        # Post-analysis navigation hint (A3.5)
+        # Post-analysis navigation hint
         if direct_facts:
             ui.separator().classes("q-my-sm")
             with ui.row().classes("items-center gap-2 q-pa-sm").style(
@@ -443,13 +541,55 @@ def _show_analysis_results_dialog(proj, result: dict, script_id: str):
             ):
                 ui.icon("lightbulb", color="primary")
                 ui.label(
-                    "💡 提示：请前往「审查」标签页确认 AI 提取的推断结果"
+                    "💡 提示：添加推断后，请前往「审查」标签页确认 AI 提取的推断结果"
                 ).classes("text-body2 text-primary")
 
         with ui.row().classes("w-full justify-end q-mt-md"):
             ui.button("关闭", on_click=dlg.close).props("flat")
 
     dlg.open()
+
+
+def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
+    """Convert a single direct_fact from analysis into a pending Deduction.
+
+    Maps character_name and location_name back to IDs from the project.
+    Returns True if the deduction was successfully created.
+    """
+    char_name = fact_dict.get("character_name", "")
+    loc_name = fact_dict.get("location_name", "")
+    ts = fact_dict.get("time_slot", "")
+    confidence_str = fact_dict.get("confidence", "medium")
+    evidence = fact_dict.get("evidence", "")
+
+    # Map names to IDs
+    char = next((c for c in proj.characters if c.name == char_name), None)
+    loc = next((l for l in proj.locations if l.name == loc_name), None)
+
+    # Skip if we can't resolve both character and location
+    if not char or not loc:
+        return False
+    # Skip if time_slot is not valid
+    if not ts or not re.match(r"^\d{2}:\d{2}$", ts):
+        return False
+
+    # Map confidence string to enum
+    try:
+        conf = ConfidenceLevel(confidence_str)
+    except ValueError:
+        conf = ConfidenceLevel.medium
+
+    deduction = Deduction(
+        character_id=char.id,
+        location_id=loc.id,
+        time_slot=ts,
+        confidence=conf,
+        reasoning=evidence or f"剧本分析：{char_name} 在 {ts} 位于 {loc_name}",
+        supporting_script_ids=[script_id],
+        status=DeductionStatus.pending,
+    )
+    app_state.add_deduction(deduction)
+    return True
 
 
 def _create_deductions_from_facts(

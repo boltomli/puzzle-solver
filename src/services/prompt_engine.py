@@ -211,6 +211,31 @@ class PromptEngine:
         # Known time slots
         parts.append(f"\n### Known Time Slots\n{', '.join(project.time_slots)}")
 
+        # Confirmed facts
+        parts.append("\n### Confirmed Facts")
+        for fact in project.facts:
+            char = next((c for c in project.characters if c.id == fact.character_id), None)
+            loc = next((l for l in project.locations if l.id == fact.location_id), None)
+            char_name = char.name if char else fact.character_id
+            loc_name = loc.name if loc else fact.location_id
+            parts.append(f"- {char_name} was at {loc_name} at {fact.time_slot}")
+
+        # Game rules & hints
+        parts.append("\n### Game Rules & Hints")
+        for hint in project.hints:
+            parts.append(f"- [{hint.type.value.upper()}] {hint.content}")
+
+        # Other scripts (for cross-reference)
+        other_scripts = [s for s in project.scripts if s.id != script.id]
+        if other_scripts:
+            parts.append("\n### Other Scripts (for cross-reference)")
+            for other in other_scripts:
+                parts.append(
+                    f'\n#### Script: "{other.title or "Untitled"}" '
+                    f"(#{other.metadata.source_order or '?'})"
+                )
+                parts.append(f"```\n{other.raw_text}\n```")
+
         # New script text
         parts.append(f"\n### New Script Text\n```\n{script.raw_text}\n```")
 

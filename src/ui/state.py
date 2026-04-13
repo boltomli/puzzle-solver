@@ -260,6 +260,17 @@ class AppState:
                 return script
         return None
 
+    def save_script_analysis(self, script_id: str, result: dict) -> bool:
+        """Save analysis result to a script. Returns True if saved."""
+        if not self.current_project:
+            return False
+        for script in self.current_project.scripts:
+            if script.id == script_id:
+                script.analysis_result = result
+                self.save()
+                return True
+        return False
+
     def remove_script(self, script_id: str) -> bool:
         """Remove a script by ID. Returns True if found and removed."""
         if not self.current_project:

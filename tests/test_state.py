@@ -302,3 +302,31 @@ class TestAppStateCallbacks:
         state.on_change(lambda: calls.append(1))
         state.create_project(name="Test")
         assert len(calls) == 1  # Second callback still ran
+
+
+class TestSaveScriptAnalysis:
+    """Tests for the save_script_analysis method."""
+
+    def test_save_script_analysis_success(self, state):
+        """Saving analysis result should set it on the script and persist."""
+        state.create_project(name="Test")
+        script = state.add_script(raw_text="Some script text", title="Scene 1")
+        result = {"characters_mentioned": [{"name": "Alice"}], "direct_facts": []}
+
+        saved = state.save_script_analysis(script.id, result)
+        assert saved is True
+        assert script.analysis_result == result
+
+        # Verify persisted to disk
+        loaded = state.store.load_project(state.current_project.id)
+        loaded_script = next(s for s in loaded.scripts if s.id == script.id)
+        assert loaded_script.analysis_result == result
+
+    def test_save_script_analysis_no_project(self, state):
+        """Returns False when no project is loaded."""
+        assert state.save_script_analysis("some-id", {}) is False
+
+    def test_save_script_analysis_nonexistent_script(self, state):
+        """Returns False for unknown script_id."""
+        state.create_project(name="Test")
+        assert state.save_script_analysis("nonexistent", {}) is False
