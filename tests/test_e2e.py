@@ -318,3 +318,137 @@ class TestAcceptRejectE2E:
         )
         assert bob_14 is not None
         assert bob_14.location_id == kitchen.id
+
+
+# ---------------------------------------------------------------------------
+# Entity management CRUD E2E tests
+# ---------------------------------------------------------------------------
+
+
+class TestCharacterCRUDE2E:
+    def test_character_full_lifecycle(self, state):
+        """Test add → update (name, aliases, status) → remove character."""
+        state.create_project(name="人物CRUD测试")
+
+        # Create
+        char = state.add_character(
+            name="Emma",
+            aliases=["艾玛"],
+            description="主角",
+            status=CharacterStatus.confirmed,
+        )
+        assert char.name == "Emma"
+        assert char.aliases == ["艾玛"]
+        assert char.status == CharacterStatus.confirmed
+
+        # Update
+        updated = state.update_character(
+            char.id,
+            name="Emma Updated",
+            aliases=["艾玛", "Em"],
+            status=CharacterStatus.suspected,
+        )
+        assert updated.name == "Emma Updated"
+        assert len(updated.aliases) == 2
+        assert updated.status == CharacterStatus.suspected
+
+        # Verify persistence
+        loaded = state.store.load_project(state.current_project.id)
+        assert loaded.characters[0].name == "Emma Updated"
+
+        # Remove
+        removed = state.remove_character(char.id)
+        assert removed is True
+        assert len(state.current_project.characters) == 0
+
+
+class TestLocationCRUDE2E:
+    def test_location_full_lifecycle(self, state):
+        """Test add → update (name, aliases) → remove location."""
+        state.create_project(name="地点CRUD测试")
+
+        loc = state.add_location(name="草坪", aliases=["Lawn"], description="户外")
+        assert loc.name == "草坪"
+
+        updated = state.update_location(loc.id, name="大草坪", aliases=["Lawn", "草地"])
+        assert updated.name == "大草坪"
+        assert len(updated.aliases) == 2
+
+        removed = state.remove_location(loc.id)
+        assert removed is True
+        assert len(state.current_project.locations) == 0
+
+
+class TestTimeSlotE2E:
+    def test_time_slot_add_sort_remove(self, state):
+        """Time slots should auto-sort and prevent duplicates."""
+        state.create_project(name="时间测试")
+
+        state.add_time_slot("16:00")
+        state.add_time_slot("14:00")
+        state.add_time_slot("15:00")
+        assert state.current_project.time_slots == ["14:00", "15:00", "16:00"]
+
+        # Duplicate
+        added = state.add_time_slot("14:00")
+        assert added is False
+
+        # Invalid format
+        with pytest.raises(ValueError, match="HH:MM"):
+            state.add_time_slot("9am")
+
+        # Remove
+        state.remove_time_slot("15:00")
+        assert state.current_project.time_slots == ["14:00", "16:00"]
+
+
+class TestHintE2E:
+    def test_hint_add_and_remove(self, state):
+        """Test hint/rule management."""
+        state.create_project(name="规则测试")
+
+        hint = state.add_hint(hint_type=HintType.rule, content="每人每时段只能在一个地点")
+        assert hint.type == HintType.rule
+        assert hint.content == "每人每时段只能在一个地点"
+
+        hint2 = state.add_hint(hint_type=HintType.hint, content="注意厨房的线索")
+        assert len(state.current_project.hints) == 2
+
+        state.remove_hint(hint.id)
+        assert len(state.current_project.hints) == 1
+        assert state.current_project.hints[0].id == hint2.id
+
+
+class TestManualFactE2E:
+    def test_manual_fact_entry_and_deletion(self, state):
+        """Test adding and removing facts manually."""
+        state.create_project(name="事实测试", time_slots=["14:00", "15:00"])
+        char = state.add_character(name="Emma")
+        loc = state.add_location(name="草坪")
+
+        fact = state.add_fact(
+            character_id=char.id,
+            location_id=loc.id,
+            time_slot="14:00",
+            source_type=SourceType.user_input,
+            source_evidence="手动观察",
+        )
+        assert fact.source_type == SourceType.user_input
+        assert fact.source_evidence == "手动观察"
+        assert len(state.current_project.facts) == 1
+
+        # Verify in matrix
+        from src.ui.pages.matrix import build_matrix_data
+        rows = build_matrix_data(state.current_project)
+        assert rows[0]["14:00"] == "草坪"
+        assert rows[0]["14:00_status"] == "confirmed"
+
+        # Delete
+        removed = state.remove_fact(fact.id)
+        assert removed is True
+        assert len(state.current_project.facts) == 0
+
+        # Matrix should now be empty
+        rows = build_matrix_data(state.current_project)
+        assert rows[0]["14:00"] == ""
+        assert rows[0]["14:00_status"] == "unknown"
