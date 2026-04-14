@@ -74,15 +74,51 @@ VALID_LOWERCASE_MODULES: set[str] = {
 # Generate with: import flet as ft; print([a for a in dir(ft.Tooltip) if not a.startswith('_')])
 KWARGS_OVERRIDE: dict[str, set[str]] = {
     "Tooltip": {
-        "message", "bgcolor", "enable_feedback", "exclude_from_semantics",
-        "exit_duration", "margin", "mouse_cursor", "padding", "prefer_below",
-        "show_duration", "size_constraints", "tap_to_dismiss", "text_align",
-        "text_style", "trigger_mode", "vertical_offset", "wait_duration",
+        "message",
+        "bgcolor",
+        "enable_feedback",
+        "exclude_from_semantics",
+        "exit_duration",
+        "margin",
+        "mouse_cursor",
+        "padding",
+        "prefer_below",
+        "show_duration",
+        "size_constraints",
+        "tap_to_dismiss",
+        "text_align",
+        "text_style",
+        "trigger_mode",
+        "vertical_offset",
+        "wait_duration",
         # common base params
-        "key", "ref", "data", "visible", "disabled", "expand", "expand_loose",
-        "col", "opacity", "tooltip", "badge", "rtl", "adaptive", "width",
-        "height", "left", "top", "right", "bottom", "align", "margin",
-        "rotate", "scale", "offset", "flip", "transform", "aspect_ratio",
+        "key",
+        "ref",
+        "data",
+        "visible",
+        "disabled",
+        "expand",
+        "expand_loose",
+        "col",
+        "opacity",
+        "tooltip",
+        "badge",
+        "rtl",
+        "adaptive",
+        "width",
+        "height",
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "align",
+        "margin",
+        "rotate",
+        "scale",
+        "offset",
+        "flip",
+        "transform",
+        "aspect_ratio",
     },
 }
 
@@ -93,6 +129,7 @@ IGNORE_ATTRS: set[str] = {"__init__", "__class__"}
 # ===================================================================
 # Helpers
 # ===================================================================
+
 
 def _resolve_flet_class(name: str) -> type | None:
     """Return the Flet class/function for a top-level ``ft.<name>``."""
@@ -136,6 +173,7 @@ def _get_valid_params(cls) -> set[str] | None:
 # AST Visitor
 # ===================================================================
 
+
 class FletAPIChecker(ast.NodeVisitor):
     """Walk an AST and collect Flet API issues."""
 
@@ -150,19 +188,23 @@ class FletAPIChecker(ast.NodeVisitor):
         func = node.func
 
         # Pattern 1: ft.ClassName(kw=...)
-        if (isinstance(func, ast.Attribute)
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "ft"):
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "ft"
+        ):
             cls_name = func.attr
             cls = _resolve_flet_class(cls_name)
             if cls is not None:
                 self._check_kwargs(node, f"ft.{cls_name}", cls)
 
         # Pattern 2: ft.sub.ClassName(kw=...)  e.g. ft.dropdown.Option(...)
-        elif (isinstance(func, ast.Attribute)
-              and isinstance(func.value, ast.Attribute)
-              and isinstance(func.value.value, ast.Name)
-              and func.value.value.id == "ft"):
+        elif (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Attribute)
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == "ft"
+        ):
             sub_name = func.value.attr
             cls_name = func.attr
             cls = _resolve_submodule_class(sub_name, cls_name)
@@ -198,14 +240,16 @@ class FletAPIChecker(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute):
         val = node.value
 
-        if not (isinstance(val, ast.Attribute)
-                and isinstance(val.value, ast.Name)
-                and val.value.id == "ft"):
+        if not (
+            isinstance(val, ast.Attribute)
+            and isinstance(val.value, ast.Name)
+            and val.value.id == "ft"
+        ):
             self.generic_visit(node)
             return
 
-        ns_name = val.attr       # e.g. 'Alignment', 'padding', 'dropdown'
-        attr_name = node.attr    # e.g. 'CENTER', 'only', 'Option'
+        ns_name = val.attr  # e.g. 'Alignment', 'padding', 'dropdown'
+        attr_name = node.attr  # e.g. 'CENTER', 'only', 'Option'
 
         # --- Case 1: Known valid sub-modules (e.g. ft.dropdown.Option) ---
         if ns_name in VALID_LOWERCASE_MODULES:
@@ -258,11 +302,12 @@ class FletAPIChecker(ast.NodeVisitor):
 # Regex-based deprecated pattern checks
 # ===================================================================
 
+
 def _check_deprecated(filepath: str, source: str) -> list[str]:
     issues = []
     for pattern, msg in DEPRECATED_PATTERNS:
         for m in re.finditer(pattern, source):
-            lineno = source[:m.start()].count("\n") + 1
+            lineno = source[: m.start()].count("\n") + 1
             issues.append(f"{filepath}:{lineno}: DEPRECATED — {msg}")
     return issues
 
@@ -270,6 +315,7 @@ def _check_deprecated(filepath: str, source: str) -> list[str]:
 # ===================================================================
 # String similarity for suggestions
 # ===================================================================
+
 
 def _closest_match(name: str, candidates: set[str]) -> str | None:
     """Return the closest match from *candidates* using simple edit distance."""
@@ -306,6 +352,7 @@ def _edit_distance(a: str, b: str) -> int:
 # Main
 # ===================================================================
 
+
 def check_file(filepath: str) -> list[str]:
     """Check a single file and return a list of issue strings."""
     full_path = PROJECT_ROOT / filepath
@@ -333,10 +380,9 @@ def check_file(filepath: str) -> list[str]:
 def main():
     # Force UTF-8 output on Windows
     import io
+
     if sys.stdout.encoding != "utf-8":
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     print(f"[CHECK] Flet API Compatibility Checker -- flet v{ft.__version__}")
     print(f"   Project root: {PROJECT_ROOT}")
@@ -356,9 +402,7 @@ def main():
 
     print("-" * 60)
     if all_issues:
-        print(
-            f"  [WARN] {len(all_issues)} issue(s) found in {files_with_issues} file(s)"
-        )
+        print(f"  [WARN] {len(all_issues)} issue(s) found in {files_with_issues} file(s)")
         sys.exit(1)
     else:
         print("  [OK] No Flet API issues found!")

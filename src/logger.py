@@ -49,18 +49,14 @@ def setup_logging(log_dir: Path | None = None) -> None:
     logger.add(
         log_dir / "puzzle-solver.log",
         level="DEBUG",
-        rotation="00:00",          # rotate at midnight
+        rotation="00:00",  # rotate at midnight
         retention="14 days",
         compression="zip",
         encoding="utf-8",
-        enqueue=True,              # non-blocking async-safe writes
-        backtrace=True,            # full traceback on exceptions
-        diagnose=True,             # variable values in traceback
-        format=(
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-            "{level:<8} | "
-            "{name}:{line} — {message}"
-        ),
+        enqueue=True,  # non-blocking async-safe writes
+        backtrace=True,  # full traceback on exceptions
+        diagnose=True,  # variable values in traceback
+        format=("{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {name}:{line} — {message}"),
     )
 
     logger.info("Logging initialised — log dir: {}", log_dir)

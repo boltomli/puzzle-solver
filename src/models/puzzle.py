@@ -7,16 +7,17 @@ Core concept: a 3D assignment puzzle — Character × Location × Time.
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # --- Enums ---
+
 
 class CharacterStatus(str, Enum):
     """Status of a character's identity certainty."""
+
     confirmed = "confirmed"
     suspected = "suspected"
     unknown = "unknown"
@@ -24,6 +25,7 @@ class CharacterStatus(str, Enum):
 
 class SourceType(str, Enum):
     """How a fact was established."""
+
     script_explicit = "script_explicit"
     user_input = "user_input"
     ai_deduction = "ai_deduction"
@@ -32,6 +34,7 @@ class SourceType(str, Enum):
 
 class ConfidenceLevel(str, Enum):
     """AI confidence level for a deduction."""
+
     certain = "certain"
     high = "high"
     medium = "medium"
@@ -40,6 +43,7 @@ class ConfidenceLevel(str, Enum):
 
 class DeductionStatus(str, Enum):
     """Review status of a deduction."""
+
     pending = "pending"
     accepted = "accepted"
     rejected = "rejected"
@@ -47,6 +51,7 @@ class DeductionStatus(str, Enum):
 
 class HintType(str, Enum):
     """Type of hint/rule/constraint."""
+
     rule = "rule"
     hint = "hint"
     constraint = "constraint"
@@ -54,17 +59,20 @@ class HintType(str, Enum):
 
 # --- Sub-models ---
 
+
 class ScriptMetadata(BaseModel):
     """Metadata extracted from or annotated on a script."""
-    stated_time: Optional[str] = None
-    stated_location: Optional[str] = None
+
+    stated_time: str | None = None
+    stated_location: str | None = None
     characters_mentioned: list[str] = Field(default_factory=list)
-    source_order: Optional[int] = None
-    user_notes: Optional[str] = None
+    source_order: int | None = None
+    user_notes: str | None = None
 
 
 class HintScope(BaseModel):
     """Scope limiter for a hint — which entities it applies to."""
+
     character_ids: list[str] = Field(default_factory=list)
     location_ids: list[str] = Field(default_factory=list)
     time_slots: list[str] = Field(default_factory=list)
@@ -72,29 +80,33 @@ class HintScope(BaseModel):
 
 # --- Core Entity Models ---
 
+
 class Character(BaseModel):
     """A character in the mystery game."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     aliases: list[str] = Field(default_factory=list)
-    description: Optional[str] = None
+    description: str | None = None
     status: CharacterStatus = CharacterStatus.confirmed
-    discovered_in_script_id: Optional[str] = None
+    discovered_in_script_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 
 class Location(BaseModel):
     """A location in the mystery game."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     aliases: list[str] = Field(default_factory=list)
-    description: Optional[str] = None
-    discovered_in_script_id: Optional[str] = None
+    description: str | None = None
+    discovered_in_script_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 
 class TimeSlot(BaseModel):
     """A time slot in the mystery game with unique ID."""
+
     id: str = Field(default_factory=lambda: uuid4().hex[:8])
     label: str  # HH:MM format, e.g., "16:00"
     description: str = ""  # Optional context, e.g., "第一天", "Day 2"
@@ -110,40 +122,44 @@ class TimeSlot(BaseModel):
 
 class Script(BaseModel):
     """A script/scene entry with raw text from the game."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
-    title: Optional[str] = None
+    title: str | None = None
     raw_text: str
     metadata: ScriptMetadata = Field(default_factory=ScriptMetadata)
-    analysis_result: Optional[dict] = None  # Cached AI analysis result
+    analysis_result: dict | None = None  # Cached AI analysis result
     added_at: datetime = Field(default_factory=datetime.now)
 
 
 class Fact(BaseModel):
     """A confirmed fact: character X was at location Y at time Z."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
     time_slot: str  # TimeSlot ID reference
     source_type: SourceType
-    source_evidence: Optional[str] = None
+    source_evidence: str | None = None
     source_script_ids: list[str] = Field(default_factory=list)
-    from_deduction_id: Optional[str] = None
+    from_deduction_id: str | None = None
     confirmed_at: datetime = Field(default_factory=datetime.now)
 
 
 class Rejection(BaseModel):
     """A rejected deduction — serves as a negative constraint."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
     time_slot: str  # TimeSlot ID reference
     reason: str
-    from_deduction_id: Optional[str] = None
+    from_deduction_id: str | None = None
     rejected_at: datetime = Field(default_factory=datetime.now)
 
 
 class Deduction(BaseModel):
     """An AI-generated deduction candidate pending user review."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
@@ -153,13 +169,14 @@ class Deduction(BaseModel):
     supporting_script_ids: list[str] = Field(default_factory=list)
     depends_on_fact_ids: list[str] = Field(default_factory=list)
     status: DeductionStatus = DeductionStatus.pending
-    batch_id: Optional[str] = None
+    batch_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime | None = None
 
 
 class Hint(BaseModel):
     """A game-provided hint or rule that constrains the solution space."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     type: HintType
     content: str
@@ -169,11 +186,13 @@ class Hint(BaseModel):
 
 # --- Root Model ---
 
+
 class Project(BaseModel):
     """Top-level game/project container. One project = one mystery game playthrough."""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     time_slots: list[TimeSlot] = Field(default_factory=list)
     characters: list[Character] = Field(default_factory=list)
     locations: list[Location] = Field(default_factory=list)
@@ -226,9 +245,10 @@ class Project(BaseModel):
 
 class ProjectSummary(BaseModel):
     """Lightweight project summary for listing."""
+
     id: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     character_count: int = 0
     location_count: int = 0
     script_count: int = 0

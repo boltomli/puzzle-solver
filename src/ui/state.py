@@ -6,7 +6,6 @@ The Flet UI layer will call page.update() directly after state changes.
 
 import re
 from datetime import datetime
-from typing import Optional
 
 from loguru import logger
 
@@ -34,7 +33,7 @@ class AppState:
 
     def __init__(self, store: JsonStore | None = None):
         self.store = store or JsonStore()
-        self.current_project: Optional[Project] = None
+        self.current_project: Project | None = None
         # Deduplication indexes: O(1) lookup for (character_id, location_id, time_slot) triples
         self._fact_index: set[tuple[str, str, str]] = set()
         self._pending_index: set[tuple[str, str, str]] = set()
@@ -61,7 +60,9 @@ class AppState:
         """Load a project by ID and set it as the current project."""
         self.current_project = self.store.load_project(project_id)
         self._rebuild_indexes()
-        logger.info("AppState.load_project: loaded {!r} (id={})", self.current_project.name, project_id)
+        logger.info(
+            "AppState.load_project: loaded {!r} (id={})", self.current_project.name, project_id
+        )
 
     def save(self) -> None:
         """Save the current project to disk."""
@@ -142,7 +143,9 @@ class AppState:
                 if status is not None:
                     char.status = status
                 self.save()
-                logger.info("AppState.update_character: updated id={!r} name={!r}", character_id, char.name)
+                logger.info(
+                    "AppState.update_character: updated id={!r} name={!r}", character_id, char.name
+                )
                 return char
         logger.warning("AppState.update_character: id={!r} not found", character_id)
         return None
@@ -202,7 +205,9 @@ class AppState:
                 if description is not None:
                     loc.description = description
                 self.save()
-                logger.info("AppState.update_location: updated id={!r} name={!r}", location_id, loc.name)
+                logger.info(
+                    "AppState.update_location: updated id={!r} name={!r}", location_id, loc.name
+                )
                 return loc
         logger.warning("AppState.update_location: id={!r} not found", location_id)
         return None
@@ -250,7 +255,9 @@ class AppState:
         self.save()
         logger.info(
             "AppState.add_script: added {!r} (id={}) len={}",
-            title or "Untitled", script.id, len(raw_text),
+            title or "Untitled",
+            script.id,
+            len(raw_text),
         )
         return script
 
@@ -333,7 +340,10 @@ class AppState:
         self.save()
         logger.info(
             "AppState.add_fact: char={!r} loc={!r} ts={!r} source={}",
-            character_id, location_id, time_slot, source_type,
+            character_id,
+            location_id,
+            time_slot,
+            source_type,
         )
         return fact
 
@@ -349,9 +359,7 @@ class AppState:
         if removed_fact is None:
             logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
             return False
-        self.current_project.facts = [
-            f for f in self.current_project.facts if f.id != fact_id
-        ]
+        self.current_project.facts = [f for f in self.current_project.facts if f.id != fact_id]
         self._fact_index.discard(
             (removed_fact.character_id, removed_fact.location_id, removed_fact.time_slot)
         )
@@ -370,7 +378,11 @@ class AppState:
         # Check for duplicate: same label AND same description
         for ts in self.current_project.time_slots:
             if ts.label == time_slot and ts.description == description:
-                logger.debug("AppState.add_time_slot: {!r} (desc={!r}) already exists, skipped", time_slot, description)
+                logger.debug(
+                    "AppState.add_time_slot: {!r} (desc={!r}) already exists, skipped",
+                    time_slot,
+                    description,
+                )
                 return None
         # Determine next sort_order
         max_order = max((ts.sort_order for ts in self.current_project.time_slots), default=-1)
@@ -378,7 +390,12 @@ class AppState:
         self.current_project.time_slots.append(new_ts)
         self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
         self.save()
-        logger.info("AppState.add_time_slot: added {!r} (id={}, desc={!r})", time_slot, new_ts.id, description)
+        logger.info(
+            "AppState.add_time_slot: added {!r} (id={}, desc={!r})",
+            time_slot,
+            new_ts.id,
+            description,
+        )
         return new_ts
 
     def remove_time_slot(self, time_slot_id: str) -> bool:
@@ -413,10 +430,15 @@ class AppState:
             logger.debug("AppState.reorder_time_slot: id={!r} already at boundary", time_slot_id)
             return False
         # Swap sort_order values
-        slots[idx].sort_order, slots[swap_idx].sort_order = slots[swap_idx].sort_order, slots[idx].sort_order
+        slots[idx].sort_order, slots[swap_idx].sort_order = (
+            slots[swap_idx].sort_order,
+            slots[idx].sort_order,
+        )
         self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
         self.save()
-        logger.info("AppState.reorder_time_slot: moved id={!r} direction={}", time_slot_id, direction)
+        logger.info(
+            "AppState.reorder_time_slot: moved id={!r} direction={}", time_slot_id, direction
+        )
         return True
 
     def get_time_slot_by_id(self, ts_id: str) -> TimeSlot | None:
@@ -459,9 +481,7 @@ class AppState:
         if not self.current_project:
             raise ValueError("No project loaded")
         original_len = len(self.current_project.hints)
-        self.current_project.hints = [
-            h for h in self.current_project.hints if h.id != hint_id
-        ]
+        self.current_project.hints = [h for h in self.current_project.hints if h.id != hint_id]
         if len(self.current_project.hints) < original_len:
             self.save()
             logger.info("AppState.remove_hint: removed id={!r}", hint_id)
@@ -484,10 +504,16 @@ class AppState:
             raise ValueError("No project loaded")
         triple = (deduction.character_id, deduction.location_id, deduction.time_slot)
         # Check all three indexes for duplicates
-        if triple in self._fact_index or triple in self._pending_index or triple in self._rejection_index:
+        if (
+            triple in self._fact_index
+            or triple in self._pending_index
+            or triple in self._rejection_index
+        ):
             logger.debug(
                 "AppState.add_deduction: skipping duplicate char={!r} loc={!r} ts={!r}",
-                deduction.character_id, deduction.location_id, deduction.time_slot,
+                deduction.character_id,
+                deduction.location_id,
+                deduction.time_slot,
             )
             return False
         self.current_project.deductions.append(deduction)
@@ -495,8 +521,10 @@ class AppState:
         self.save()
         logger.debug(
             "AppState.add_deduction: char={!r} loc={!r} ts={!r} conf={}",
-            deduction.character_id, deduction.location_id,
-            deduction.time_slot, deduction.confidence,
+            deduction.character_id,
+            deduction.location_id,
+            deduction.time_slot,
+            deduction.confidence,
         )
         return True
 
@@ -530,7 +558,10 @@ class AppState:
         self.save()
         logger.info(
             "AppState.accept_deduction: id={!r} → fact char={!r} loc={!r} ts={!r}",
-            deduction_id, ded.character_id, ded.location_id, ded.time_slot,
+            deduction_id,
+            ded.character_id,
+            ded.location_id,
+            ded.time_slot,
         )
         return fact
 
@@ -562,7 +593,8 @@ class AppState:
         self.save()
         logger.info(
             "AppState.reject_deduction: id={!r} reason={!r:.60}",
-            deduction_id, reason,
+            deduction_id,
+            reason,
         )
         return rejection
 
@@ -570,10 +602,7 @@ class AppState:
         """Return list of pending deductions."""
         if not self.current_project:
             return []
-        return [
-            d for d in self.current_project.deductions
-            if d.status == DeductionStatus.pending
-        ]
+        return [d for d in self.current_project.deductions if d.status == DeductionStatus.pending]
 
     def clear_pending_deductions(self) -> int:
         """Remove all pending deductions. Returns count removed."""
@@ -581,8 +610,7 @@ class AppState:
             return 0
         original_len = len(self.current_project.deductions)
         self.current_project.deductions = [
-            d for d in self.current_project.deductions
-            if d.status != DeductionStatus.pending
+            d for d in self.current_project.deductions if d.status != DeductionStatus.pending
         ]
         removed = original_len - len(self.current_project.deductions)
         if removed > 0:

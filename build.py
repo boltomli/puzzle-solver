@@ -46,16 +46,25 @@ def main() -> None:
     # Build command using flet pack (desktop) or flet publish (web)
     if args.web:
         command: list[str] = [
-            sys.executable, "-m", "flet", "publish",
+            sys.executable,
+            "-m",
+            "flet",
+            "publish",
             "main.py",
-            "--app-name", args.name,
+            "--app-name",
+            args.name,
         ]
     else:
         command = [
-            sys.executable, "-m", "flet", "pack",
+            sys.executable,
+            "-m",
+            "flet",
+            "pack",
             "main.py",
-            "--name", args.name,
-            "--add-data", "data:data",
+            "--name",
+            args.name,
+            "--add-data",
+            "data:data",
         ]
 
     print("Flet build command:")

@@ -36,7 +36,7 @@ def _extract_json(raw: str) -> dict:
         pass
 
     # 2. Try extracting from markdown code block
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1).strip())
@@ -44,11 +44,11 @@ def _extract_json(raw: str) -> dict:
             pass
 
     # 3. Try finding first { to last }
-    first_brace = text.find('{')
-    last_brace = text.rfind('}')
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
     if first_brace != -1 and last_brace > first_brace:
         try:
-            return json.loads(text[first_brace:last_brace + 1])
+            return json.loads(text[first_brace : last_brace + 1])
         except (json.JSONDecodeError, ValueError):
             pass
 
@@ -117,9 +117,7 @@ class DeductionService:
         system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(
             project, focus_filter=focus_filter
         )
-        logger.debug(
-            "run_focused_deduction: prompt built (user_prompt_len={})", len(user_prompt)
-        )
+        logger.debug("run_focused_deduction: prompt built (user_prompt_len={})", len(user_prompt))
         try:
             raw = await self.llm.chat(system_prompt, user_prompt)
             result = _extract_json(raw)
@@ -132,9 +130,7 @@ class DeductionService:
             )
             return result
         except Exception:
-            logger.exception(
-                "run_focused_deduction: failed for project={!r}", project.name
-            )
+            logger.exception("run_focused_deduction: failed for project={!r}", project.name)
             raise
 
     async def analyze_script(self, project: Project, script: Script) -> dict:
@@ -164,9 +160,7 @@ class DeductionService:
             )
             return result
         except Exception:
-            logger.exception(
-                "analyze_script: failed for script={!r}", script.title or "Untitled"
-            )
+            logger.exception("analyze_script: failed for script={!r}", script.title or "Untitled")
             raise
 
     @staticmethod
@@ -235,8 +229,7 @@ class DeductionService:
         for loc in project.locations:
             for ts in project.time_slots:
                 if any(
-                    f.location_id == loc.id and _matches_ts(f.time_slot, ts)
-                    for f in project.facts
+                    f.location_id == loc.id and _matches_ts(f.time_slot, ts) for f in project.facts
                 ):
                     continue
 
@@ -278,7 +271,9 @@ class DeductionService:
                         new_deductions.append(ded)
                         logger.debug(
                             "run_cascade: strategy2 {} @ {} → {}",
-                            possible[0].name, ts.label, loc.name,
+                            possible[0].name,
+                            ts.label,
+                            loc.name,
                         )
 
         logger.info("run_cascade: found {} new certain deduction(s)", len(new_deductions))

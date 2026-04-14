@@ -11,7 +11,6 @@ from src.models.puzzle import ConfidenceLevel, DeductionStatus
 from src.services.deduction import DeductionService
 from src.ui.state import app_state
 
-
 # Confidence display order and styling
 _CONFIDENCE_ORDER = {
     ConfidenceLevel.certain: 0,
@@ -124,9 +123,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
         def on_clear_all_click(e):
             def do_clear(e):
                 count = app_state.clear_pending_deductions()
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"已清除 {count} 条待审查推断")
-                )
+                page.snack_bar = ft.SnackBar(ft.Text(f"已清除 {count} 条待审查推断"))
                 page.snack_bar.open = True
                 dlg.open = False
                 page.update()
@@ -138,9 +135,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
 
             dlg = ft.AlertDialog(
                 title=ft.Text("确认清除"),
-                content=ft.Text(
-                    f"确定要清除所有 {len(pending)} 条待审查推断吗？此操作不可撤销。"
-                ),
+                content=ft.Text(f"确定要清除所有 {len(pending)} 条待审查推断吗？此操作不可撤销。"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
                     ft.ElevatedButton(
@@ -262,11 +257,13 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                         )
                         page.snack_bar.open = True
                     refresh()
+
                 return handler
 
             def make_reject_handler(ded_id, d_char, d_loc, d_ts_label):
                 def handler(e):
                     _show_reject_dialog(page, ded_id, d_char, d_loc, d_ts_label, refresh)
+
                 return handler
 
             action_row = ft.Row(
@@ -280,9 +277,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                     ft.OutlinedButton(
                         "❌ 拒绝",
                         style=ft.ButtonStyle(color=ft.Colors.RED),
-                        on_click=make_reject_handler(
-                            ded.id, char_name, loc_name, ts_label
-                        ),
+                        on_click=make_reject_handler(ded.id, char_name, loc_name, ts_label),
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.END,
@@ -357,9 +352,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
             controls=[
                 ft.Icon(status_icon, color=status_color, size=20),
                 ft.Container(
-                    content=ft.Text(
-                        status_label, size=12, color=ft.Colors.WHITE
-                    ),
+                    content=ft.Text(status_label, size=12, color=ft.Colors.WHITE),
                     bgcolor=status_color,
                     border_radius=12,
                     padding=ft.Padding.symmetric(horizontal=8, vertical=2),
