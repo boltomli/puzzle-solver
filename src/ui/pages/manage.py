@@ -1060,6 +1060,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             content=ft.Column(
                 controls=[*form_controls, *fact_controls],
                 spacing=8,
+                tight=True,
             ),
             padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),

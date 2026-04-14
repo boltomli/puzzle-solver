@@ -9,7 +9,7 @@ import re
 import flet as ft
 from loguru import logger
 
-from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
+from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus, EntityKind
 from src.services.config import load_config
 from src.ui.state import app_state
 
@@ -526,8 +526,18 @@ def _show_analysis_results_dialog(
     time_refs = result.get("time_references", [])
     direct_facts = result.get("direct_facts", [])
 
-    new_chars = [ch for ch in chars_mentioned if ch.get("is_new", False)]
-    new_locs = [lo for lo in locs_mentioned if lo.get("is_new", False)]
+    new_chars = [
+        ch
+        for ch in chars_mentioned
+        if ch.get("is_new", False)
+        and not app_state.is_entity_ignored(EntityKind.character, ch.get("name", ""))
+    ]
+    new_locs = [
+        lo
+        for lo in locs_mentioned
+        if lo.get("is_new", False)
+        and not app_state.is_entity_ignored(EntityKind.location, lo.get("name", ""))
+    ]
     existing_time_slots = {ts.label for ts in proj.time_slots} if proj else set()
     new_time_refs = [
         tr
@@ -535,6 +545,7 @@ def _show_analysis_results_dialog(
         if tr.get("time_slot")
         and re.match(r"^\d{2}:\d{2}$", tr["time_slot"])
         and tr["time_slot"] not in existing_time_slots
+        and not app_state.is_entity_ignored(EntityKind.time_slot, tr["time_slot"])
     ]
 
     content_controls: list[ft.Control] = []
@@ -609,23 +620,103 @@ def _show_analysis_results_dialog(
 
             right_controls: list[ft.Control] = []
             if is_new:
+                action_row = ft.Row(spacing=4)
 
-                def make_add_char(ch_name, btn_ref):
+                def make_add_char(ch_name, row_ref):
                     def handler(e):
                         app_state.add_character(name=ch_name)
                         show_snackbar(f"已添加人物「{ch_name}」", ft.Colors.GREEN)
-                        btn_ref.disabled = True
-                        btn_ref.text = "已添加"
+                        row_ref.controls = [ft.Text("已添加", color=ft.Colors.GREEN, size=13)]
                         page.update()
 
                     return handler
 
-                add_char_btn = ft.OutlinedButton(
-                    "添加",
-                    icon=ft.Icons.PERSON_ADD,
-                )
-                add_char_btn.on_click = make_add_char(name, add_char_btn)
-                right_controls.append(add_char_btn)
+                def make_merge_char(ch_name, row_ref):
+                    def handler(e):
+                        chars = (
+                            app_state.current_project.characters
+                            if app_state.current_project
+                            else []
+                        )
+                        if not chars:
+                            show_snackbar("项目中暂无人物可合并", ft.Colors.AMBER)
+                            return
+                        dd = ft.Dropdown(
+                            label="合并到",
+                            options=[ft.dropdown.Option(key=c.id, text=c.name) for c in chars],
+                            width=200,
+                        )
+
+                        def do_merge(e2):
+                            if not dd.value:
+                                show_snackbar("请选择目标人物", ft.Colors.AMBER)
+                                return
+                            app_state.merge_character(ch_name, dd.value)
+                            target = next(
+                                (
+                                    c
+                                    for c in app_state.current_project.characters
+                                    if c.id == dd.value
+                                ),
+                                None,
+                            )
+                            show_snackbar(
+                                f"已将「{ch_name}」合并为「{target.name if target else dd.value}」的别名",
+                                ft.Colors.GREEN,
+                            )
+                            merge_dlg.open = False
+                            row_ref.controls = [ft.Text("已合并", color=ft.Colors.BLUE, size=13)]
+                            page.update()
+
+                        def do_cancel_merge(e2):
+                            merge_dlg.open = False
+                            page.update()
+
+                        merge_dlg = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text(f"合并人物「{ch_name}」"),
+                            content=ft.Column(
+                                [
+                                    ft.Text(f"将「{ch_name}」作为别名添加到已有人物：", size=13),
+                                    dd,
+                                ],
+                                tight=True,
+                                spacing=10,
+                            ),
+                            actions=[
+                                ft.TextButton("取消", on_click=do_cancel_merge),
+                                ft.ElevatedButton("确认合并", on_click=do_merge),
+                            ],
+                        )
+                        page.overlay.append(merge_dlg)
+                        merge_dlg.open = True
+                        page.update()
+
+                    return handler
+
+                def make_ignore_char(ch_name, row_ref):
+                    def handler(e):
+                        app_state.ignore_entity(EntityKind.character, ch_name)
+                        show_snackbar(f"已忽略人物「{ch_name}」", ft.Colors.GREY)
+                        row_ref.controls = [ft.Text("已忽略", color=ft.Colors.GREY, size=13)]
+                        page.update()
+
+                    return handler
+
+                action_row.controls = [
+                    ft.OutlinedButton(
+                        "添加", icon=ft.Icons.PERSON_ADD, on_click=make_add_char(name, action_row)
+                    ),
+                    ft.OutlinedButton(
+                        "合并", icon=ft.Icons.MERGE, on_click=make_merge_char(name, action_row)
+                    ),
+                    ft.TextButton(
+                        "忽略",
+                        on_click=make_ignore_char(name, action_row),
+                        style=ft.ButtonStyle(color=ft.Colors.GREY),
+                    ),
+                ]
+                right_controls.append(action_row)
 
             content_controls.append(
                 ft.Row(
@@ -666,23 +757,101 @@ def _show_analysis_results_dialog(
 
             right_controls: list[ft.Control] = []
             if is_new:
+                action_row = ft.Row(spacing=4)
 
-                def make_add_loc(lo_name, btn_ref):
+                def make_add_loc(lo_name, row_ref):
                     def handler(e):
                         app_state.add_location(name=lo_name)
                         show_snackbar(f"已添加地点「{lo_name}」", ft.Colors.GREEN)
-                        btn_ref.disabled = True
-                        btn_ref.text = "已添加"
+                        row_ref.controls = [ft.Text("已添加", color=ft.Colors.GREEN, size=13)]
                         page.update()
 
                     return handler
 
-                add_loc_btn = ft.OutlinedButton(
-                    "添加",
-                    icon=ft.Icons.ADD_LOCATION,
-                )
-                add_loc_btn.on_click = make_add_loc(name, add_loc_btn)
-                right_controls.append(add_loc_btn)
+                def make_merge_loc(lo_name, row_ref):
+                    def handler(e):
+                        locs = (
+                            app_state.current_project.locations if app_state.current_project else []
+                        )
+                        if not locs:
+                            show_snackbar("项目中暂无地点可合并", ft.Colors.AMBER)
+                            return
+                        dd = ft.Dropdown(
+                            label="合并到",
+                            options=[ft.dropdown.Option(key=lo.id, text=lo.name) for lo in locs],
+                            width=200,
+                        )
+
+                        def do_merge(e2):
+                            if not dd.value:
+                                show_snackbar("请选择目标地点", ft.Colors.AMBER)
+                                return
+                            app_state.merge_location(lo_name, dd.value)
+                            target = next(
+                                (
+                                    lo
+                                    for lo in app_state.current_project.locations
+                                    if lo.id == dd.value
+                                ),
+                                None,
+                            )
+                            show_snackbar(
+                                f"已将「{lo_name}」合并为「{target.name if target else dd.value}」的别名",
+                                ft.Colors.GREEN,
+                            )
+                            merge_dlg.open = False
+                            row_ref.controls = [ft.Text("已合并", color=ft.Colors.BLUE, size=13)]
+                            page.update()
+
+                        def do_cancel_merge(e2):
+                            merge_dlg.open = False
+                            page.update()
+
+                        merge_dlg = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text(f"合并地点「{lo_name}」"),
+                            content=ft.Column(
+                                [
+                                    ft.Text(f"将「{lo_name}」作为别名添加到已有地点：", size=13),
+                                    dd,
+                                ],
+                                tight=True,
+                                spacing=10,
+                            ),
+                            actions=[
+                                ft.TextButton("取消", on_click=do_cancel_merge),
+                                ft.ElevatedButton("确认合并", on_click=do_merge),
+                            ],
+                        )
+                        page.overlay.append(merge_dlg)
+                        merge_dlg.open = True
+                        page.update()
+
+                    return handler
+
+                def make_ignore_loc(lo_name, row_ref):
+                    def handler(e):
+                        app_state.ignore_entity(EntityKind.location, lo_name)
+                        show_snackbar(f"已忽略地点「{lo_name}」", ft.Colors.GREY)
+                        row_ref.controls = [ft.Text("已忽略", color=ft.Colors.GREY, size=13)]
+                        page.update()
+
+                    return handler
+
+                action_row.controls = [
+                    ft.OutlinedButton(
+                        "添加", icon=ft.Icons.ADD_LOCATION, on_click=make_add_loc(name, action_row)
+                    ),
+                    ft.OutlinedButton(
+                        "合并", icon=ft.Icons.MERGE, on_click=make_merge_loc(name, action_row)
+                    ),
+                    ft.TextButton(
+                        "忽略",
+                        on_click=make_ignore_loc(name, action_row),
+                        style=ft.ButtonStyle(color=ft.Colors.GREY),
+                    ),
+                ]
+                right_controls.append(action_row)
 
             content_controls.append(
                 ft.Row(
@@ -743,26 +912,40 @@ def _show_analysis_results_dialog(
 
             right_controls: list[ft.Control] = []
             if is_new_ts:
+                action_row = ft.Row(spacing=4)
 
-                def make_add_time(time_slot, btn_ref):
+                def make_add_time(time_slot, row_ref):
                     def handler(e):
                         try:
                             app_state.add_time_slot(time_slot)
                             show_snackbar(f"已添加时间段「{time_slot}」", ft.Colors.GREEN)
-                            btn_ref.disabled = True
-                            btn_ref.text = "已添加"
+                            row_ref.controls = [ft.Text("已添加", color=ft.Colors.GREEN, size=13)]
                         except ValueError as exc:
                             show_snackbar(str(exc), ft.Colors.AMBER)
                         page.update()
 
                     return handler
 
-                add_time_btn = ft.OutlinedButton(
-                    "添加",
-                    icon=ft.Icons.MORE_TIME,
-                )
-                add_time_btn.on_click = make_add_time(ts, add_time_btn)
-                right_controls.append(add_time_btn)
+                def make_ignore_time(time_slot, row_ref):
+                    def handler(e):
+                        app_state.ignore_entity(EntityKind.time_slot, time_slot)
+                        show_snackbar(f"已忽略时间段「{time_slot}」", ft.Colors.GREY)
+                        row_ref.controls = [ft.Text("已忽略", color=ft.Colors.GREY, size=13)]
+                        page.update()
+
+                    return handler
+
+                action_row.controls = [
+                    ft.OutlinedButton(
+                        "添加", icon=ft.Icons.MORE_TIME, on_click=make_add_time(ts, action_row)
+                    ),
+                    ft.TextButton(
+                        "忽略",
+                        on_click=make_ignore_time(ts, action_row),
+                        style=ft.ButtonStyle(color=ft.Colors.GREY),
+                    ),
+                ]
+                right_controls.append(action_row)
 
             content_controls.append(
                 ft.Row(

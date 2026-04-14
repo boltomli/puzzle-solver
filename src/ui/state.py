@@ -14,9 +14,11 @@ from src.models.puzzle import (
     CharacterStatus,
     Deduction,
     DeductionStatus,
+    EntityKind,
     Fact,
     Hint,
     HintType,
+    IgnoredEntity,
     Location,
     Project,
     Rejection,
@@ -488,6 +490,76 @@ class AppState:
             return True
         logger.warning("AppState.remove_hint: id={!r} not found", hint_id)
         return False
+
+    # --- Ignored entity management ---
+
+    def ignore_entity(self, kind: EntityKind, name: str) -> IgnoredEntity:
+        """Permanently ignore a raw entity name so it won't be suggested again."""
+        if not self.current_project:
+            raise ValueError("No project loaded")
+        name = name.strip()
+        # Deduplicate
+        for ie in self.current_project.ignored_entities:
+            if ie.kind == kind and ie.name.lower() == name.lower():
+                return ie
+        entry = IgnoredEntity(kind=kind, name=name)
+        self.current_project.ignored_entities.append(entry)
+        self.save()
+        logger.info("AppState.ignore_entity: kind={} name={!r}", kind, name)
+        return entry
+
+    def is_entity_ignored(self, kind: EntityKind, name: str) -> bool:
+        """Return True if this raw name has been ignored for the given kind."""
+        if not self.current_project:
+            return False
+        name_lower = name.strip().lower()
+        return any(
+            ie.kind == kind and ie.name.lower() == name_lower
+            for ie in self.current_project.ignored_entities
+        )
+
+    # --- Entity merge ---
+
+    def merge_character(self, source_name: str, target_id: str) -> Character | None:
+        """Merge source_name into an existing character by adding it as an alias.
+
+        Does not create a new character — the source name becomes an alias of target.
+        Returns the updated target character.
+        """
+        if not self.current_project:
+            raise ValueError("No project loaded")
+        target = next((c for c in self.current_project.characters if c.id == target_id), None)
+        if not target:
+            logger.warning("AppState.merge_character: target id={!r} not found", target_id)
+            return None
+        source_name = source_name.strip()
+        if source_name.lower() != target.name.lower() and source_name not in target.aliases:
+            target.aliases.append(source_name)
+        self.save()
+        logger.info(
+            "AppState.merge_character: {!r} → {!r} (id={})", source_name, target.name, target_id
+        )
+        return target
+
+    def merge_location(self, source_name: str, target_id: str) -> Location | None:
+        """Merge source_name into an existing location by adding it as an alias.
+
+        Returns the updated target location.
+        """
+        if not self.current_project:
+            raise ValueError("No project loaded")
+        target = next((lo for lo in self.current_project.locations if lo.id == target_id), None)
+        if not target:
+            logger.warning("AppState.merge_location: target id={!r} not found", target_id)
+            return None
+        source_name = source_name.strip()
+        if source_name.lower() != target.name.lower() and source_name not in target.aliases:
+            target.aliases.append(source_name)
+        self.save()
+        logger.info(
+            "AppState.merge_location: {!r} → {!r} (id={})", source_name, target.name, target_id
+        )
+        return target
 
     # --- Deduction management ---
 

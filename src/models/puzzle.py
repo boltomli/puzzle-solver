@@ -184,6 +184,27 @@ class Hint(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
+class EntityKind(str, Enum):
+    """Which kind of entity an IgnoredEntity refers to."""
+
+    character = "character"
+    location = "location"
+    time_slot = "time_slot"
+
+
+class IgnoredEntity(BaseModel):
+    """A raw entity name that the user has chosen to permanently ignore.
+
+    When AI analysis surfaces a name that matches an entry here it will not
+    be presented to the user again as a 'new entity' suggestion.
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    kind: EntityKind
+    name: str  # raw name as returned by AI, case-insensitive match
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 # --- Root Model ---
 
 
@@ -201,6 +222,7 @@ class Project(BaseModel):
     rejections: list[Rejection] = Field(default_factory=list)
     deductions: list[Deduction] = Field(default_factory=list)
     hints: list[Hint] = Field(default_factory=list)
+    ignored_entities: list[IgnoredEntity] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
