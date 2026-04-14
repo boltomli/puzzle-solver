@@ -1,21 +1,17 @@
 """End-to-end tests for the puzzle solver application."""
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
+import pytest
+
 from src.models.puzzle import (
-    Character,
     CharacterStatus,
     ConfidenceLevel,
     Deduction,
     DeductionStatus,
-    Fact,
     HintType,
-    Location,
-    Project,
-    Rejection,
     SourceType,
 )
 from src.services.deduction import DeductionService
@@ -47,9 +43,7 @@ def mock_analysis_result():
         "locations_mentioned": [
             {"location_id": None, "name": "草坪", "is_new": True, "context": "Emma坐在此处"}
         ],
-        "time_references": [
-            {"time_slot": "15:00", "reference_text": "15:00", "is_explicit": True}
-        ],
+        "time_references": [{"time_slot": "15:00", "reference_text": "15:00", "is_explicit": True}],
         "direct_facts": [
             {
                 "character_name": "Emma",
@@ -78,15 +72,12 @@ class TestCoreE2EFlow:
     def test_full_script_to_matrix_flow(self, state, mock_analysis_result):
         """Test: create_project → add_script → extract entities from analysis → add entities → add fact → verify matrix."""
         # Step 1: Create project
-        project = state.create_project(name="E2E测试项目")
+        state.create_project(name="E2E测试项目")
         assert state.current_project is not None
         assert state.current_project.name == "E2E测试项目"
 
         # Step 2: Add script
-        script = state.add_script(
-            raw_text="15:00，Emma 坐在草坪上",
-            title="测试剧本"
-        )
+        script = state.add_script(raw_text="15:00，Emma 坐在草坪上", title="测试剧本")
         assert len(state.current_project.scripts) == 1
         assert script.raw_text == "15:00，Emma 坐在草坪上"
 
@@ -118,7 +109,7 @@ class TestCoreE2EFlow:
         emma = state.current_project.characters[0]
         lawn = state.current_project.locations[0]
         ts_15 = next(ts for ts in state.current_project.time_slots if ts.label == "15:00")
-        fact = state.add_fact(
+        _ = state.add_fact(
             character_id=emma.id,
             location_id=lawn.id,
             time_slot=ts_15.id,
@@ -129,6 +120,7 @@ class TestCoreE2EFlow:
 
         # Step 6: Verify matrix data
         from src.ui.pages.matrix import build_matrix_data
+
         rows = build_matrix_data(state.current_project)
         assert len(rows) == 1
         emma_row = rows[0]
@@ -190,6 +182,7 @@ class TestCoreE2EFlow:
 # ---------------------------------------------------------------------------
 # Populated 3×3×3 fixture for deduction / cascade / accept-reject tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def populated_state(state):
@@ -320,7 +313,11 @@ class TestAcceptRejectE2E:
         # Now cascade: Bob must be in 厨房 at 14:00
         cascade_deds = DeductionService.run_cascade(proj)
         bob_14 = next(
-            (d for d in cascade_deds if d.character_id == bob.id and d.time_slot == ts_map["14:00"].id),
+            (
+                d
+                for d in cascade_deds
+                if d.character_id == bob.id and d.time_slot == ts_map["14:00"].id
+            ),
             None,
         )
         assert bob_14 is not None
@@ -391,9 +388,9 @@ class TestTimeSlotE2E:
         """Time slots should have sort_order and prevent duplicates."""
         state.create_project(name="时间测试")
 
-        ts1 = state.add_time_slot("16:00")
+        state.add_time_slot("16:00")
         ts2 = state.add_time_slot("14:00")
-        ts3 = state.add_time_slot("15:00")
+        state.add_time_slot("15:00")
         labels = [ts.label for ts in state.current_project.time_slots]
         assert labels == ["16:00", "14:00", "15:00"]
 
@@ -449,6 +446,7 @@ class TestManualFactE2E:
 
         # Verify in matrix
         from src.ui.pages.matrix import build_matrix_data
+
         rows = build_matrix_data(state.current_project)
         ts_id = ts_map["14:00"].id
         assert rows[0][ts_id] == "草坪"

@@ -10,11 +10,9 @@ from src.models.puzzle import (
     Deduction,
     DeductionStatus,
     Project,
-    SourceType,
 )
 from src.services.config import load_config
 from src.ui.state import app_state
-
 
 # ---------------------------------------------------------------------------
 # Pure logic helper — tested by tests/test_matrix.py
@@ -38,7 +36,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             unanalyzed.append(script.title or f"剧本 #{script.metadata.source_order or '?'}")
 
     existing_chars = {c.name.lower() for c in proj.characters}
-    existing_locs = {l.name.lower() for l in proj.locations}
+    existing_locs = {lo.name.lower() for lo in proj.locations}
     existing_times = {ts.label for ts in proj.time_slots}
 
     missing_chars: set[str] = set()
@@ -57,7 +55,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             if name and name.lower() not in existing_locs:
                 missing_locs.add(name)
         for tr in script.analysis_result.get("time_references", []):
-            ts = tr.get("time_slot", "").strip()
+            ts = (tr.get("time_slot") or "").strip()
             if ts and ts not in existing_times:
                 missing_times.add(ts)
 
@@ -85,11 +83,7 @@ def build_matrix_data(project: Project) -> list[dict]:
         for ts in project.time_slots:
             # Check for confirmed fact
             fact = next(
-                (
-                    f
-                    for f in project.facts
-                    if f.character_id == char.id and f.time_slot == ts.id
-                ),
+                (f for f in project.facts if f.character_id == char.id and f.time_slot == ts.id),
                 None,
             )
             # Check for pending deduction
@@ -105,14 +99,12 @@ def build_matrix_data(project: Project) -> list[dict]:
             )
 
             if fact:
-                loc = next(
-                    (l for l in project.locations if l.id == fact.location_id), None
-                )
+                loc = next((lo for lo in project.locations if lo.id == fact.location_id), None)
                 row[ts.id] = loc.name if loc else "?"
                 row[f"{ts.id}_status"] = "confirmed"
             elif deduction:
                 loc = next(
-                    (l for l in project.locations if l.id == deduction.location_id),
+                    (lo for lo in project.locations if lo.id == deduction.location_id),
                     None,
                 )
                 row[ts.id] = f"({loc.name})" if loc else "(?)"
@@ -147,27 +139,29 @@ def build_location_time_data(project: Project) -> list[dict]:
         row: dict = {"id": loc.id, "location": loc.name}
         for ts in project.time_slots:
             # Find all confirmed facts for this (location, time_slot)
-            confirmed_char_ids = list(dict.fromkeys(
-                f.character_id
-                for f in project.facts
-                if f.location_id == loc.id and f.time_slot == ts.id
-            ))
+            confirmed_char_ids = list(
+                dict.fromkeys(
+                    f.character_id
+                    for f in project.facts
+                    if f.location_id == loc.id and f.time_slot == ts.id
+                )
+            )
             # Find all pending deductions for this (location, time_slot)
-            pending_char_ids = list(dict.fromkeys(
-                d.character_id
-                for d in project.deductions
-                if d.location_id == loc.id
-                and d.time_slot == ts.id
-                and d.status == DeductionStatus.pending
-            ))
+            pending_char_ids = list(
+                dict.fromkeys(
+                    d.character_id
+                    for d in project.deductions
+                    if d.location_id == loc.id
+                    and d.time_slot == ts.id
+                    and d.status == DeductionStatus.pending
+                )
+            )
 
             # Build character name lookup
             char_by_id = {c.id: c.name for c in project.characters}
 
             # Get confirmed character names
-            confirmed_names = [
-                char_by_id[cid] for cid in confirmed_char_ids if cid in char_by_id
-            ]
+            confirmed_names = [char_by_id[cid] for cid in confirmed_char_ids if cid in char_by_id]
             # Get pending character names (not already confirmed at this cell)
             confirmed_set = set(confirmed_char_ids)
             pending_names = [
@@ -298,13 +292,16 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
     # --- Action buttons ---
     from loguru import logger
+
     api_ok = _is_api_configured()
     logger.info("matrix._build_content: api_ok={}", api_ok)
 
     async def run_ai_deduction(e):
         """Trigger a full AI deduction pass."""
         # Pre-check for unprocessed entities from script analysis
-        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(proj)
+        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(
+            proj
+        )
 
         async def _do_ai_deduction():
             """The actual AI deduction logic."""
@@ -312,8 +309,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             controls.insert(0, progress)
             page.update()
             try:
-                from src.services.deduction import DeductionService
                 from loguru import logger
+
+                from src.services.deduction import DeductionService
 
                 service = DeductionService()
                 show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
@@ -323,12 +321,16 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 # Build lookup maps for validation
                 char_by_id = {c.id: c for c in proj.characters}
-                loc_by_id = {l.id: l for l in proj.locations}
+                loc_by_id = {lo.id: lo for lo in proj.locations}
                 char_by_name = {c.name.lower(): c for c in proj.characters}
-                loc_by_name = {l.name.lower(): l for l in proj.locations}
+                loc_by_name = {lo.name.lower(): lo for lo in proj.locations}
                 ts_label_map: dict[str, str] = {}
                 for ts_obj in proj.time_slots:
-                    key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+                    key = (
+                        f"{ts_obj.label}({ts_obj.description})"
+                        if ts_obj.description
+                        else ts_obj.label
+                    )
                     ts_label_map[key] = ts_obj.id
                     if ts_obj.label not in ts_label_map:
                         ts_label_map[ts_obj.label] = ts_obj.id
@@ -354,7 +356,8 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                         logger.warning(
                             "run_ai_deduction: skipping unresolvable deduction "
                             "char_id={!r} loc_id={!r}",
-                            raw_char_id, raw_loc_id,
+                            raw_char_id,
+                            raw_loc_id,
                         )
                         continue
 
@@ -386,14 +389,16 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 logger.info(
                     "run_ai_deduction: count={} unknown_chars={} unknown_locs={}",
-                    count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
+                    count,
+                    list(unknown_char_names.values()),
+                    list(unknown_loc_names.values()),
                 )
 
                 refresh()
 
                 # Filter out already-registered entities
                 existing_char_names = {c.name for c in proj.characters}
-                existing_loc_names = {l.name for l in proj.locations}
+                existing_loc_names = {lo.name for lo in proj.locations}
                 final_unknown_chars = [
                     n for n in unknown_char_names.values() if n not in existing_char_names
                 ]
@@ -434,7 +439,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         if missing_chars or missing_locs or missing_times or unanalyzed_scripts:
             warning_parts: list[ft.Control] = []
             if unanalyzed_scripts:
-                warning_parts.append(ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13))
+                warning_parts.append(
+                    ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13)
+                )
             if missing_chars:
                 warning_parts.append(ft.Text(f"人物：{', '.join(missing_chars)}", size=13))
             if missing_locs:
@@ -454,14 +461,20 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             _ai_warn_dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("⚠️ 发现未添加的实体"),
-                content=ft.Column([
-                    ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
-                    *warning_parts,
-                    ft.Text(
-                        "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
-                        size=13, color=ft.Colors.GREY, italic=True,
-                    ),
-                ], tight=True, spacing=8),
+                content=ft.Column(
+                    [
+                        ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
+                        *warning_parts,
+                        ft.Text(
+                            "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
+                            size=13,
+                            color=ft.Colors.GREY,
+                            italic=True,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=8,
+                ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_ai_warn),
                     ft.ElevatedButton("仍然继续推断", on_click=_proceed_ai_warn),
@@ -548,28 +561,16 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     chip_section_controls: list[ft.Control] = []
 
     if char_chips:
-        chip_section_controls.append(
-            ft.Text("人物选择：", size=14, weight=ft.FontWeight.BOLD)
-        )
-        chip_section_controls.append(
-            ft.Row(controls=char_chips, wrap=True, spacing=6)
-        )
+        chip_section_controls.append(ft.Text("人物选择：", size=14, weight=ft.FontWeight.BOLD))
+        chip_section_controls.append(ft.Row(controls=char_chips, wrap=True, spacing=6))
 
     if loc_chips:
-        chip_section_controls.append(
-            ft.Text("地点选择：", size=14, weight=ft.FontWeight.BOLD)
-        )
-        chip_section_controls.append(
-            ft.Row(controls=loc_chips, wrap=True, spacing=6)
-        )
+        chip_section_controls.append(ft.Text("地点选择：", size=14, weight=ft.FontWeight.BOLD))
+        chip_section_controls.append(ft.Row(controls=loc_chips, wrap=True, spacing=6))
 
     if time_chips:
-        chip_section_controls.append(
-            ft.Text("时间选择：", size=14, weight=ft.FontWeight.BOLD)
-        )
-        chip_section_controls.append(
-            ft.Row(controls=time_chips, wrap=True, spacing=6)
-        )
+        chip_section_controls.append(ft.Text("时间选择：", size=14, weight=ft.FontWeight.BOLD))
+        chip_section_controls.append(ft.Row(controls=time_chips, wrap=True, spacing=6))
 
     async def run_focused_deduction(e):
         """Run AI deduction focused on selected chips."""
@@ -579,7 +580,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
         logger.info(
             "run_focused_deduction: focus chars={} locs={} times={}",
-            focus_character_ids, focus_location_ids, focus_time_slots,
+            focus_character_ids,
+            focus_location_ids,
+            focus_time_slots,
         )
 
         if not focus_character_ids and not focus_location_ids and not focus_time_slots:
@@ -587,7 +590,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             return
 
         # Pre-check for unprocessed entities from script analysis
-        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(proj)
+        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(
+            proj
+        )
 
         async def _do_focused_deduction():
             """The actual focused deduction logic."""
@@ -616,12 +621,16 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 # Build lookup maps for validation
                 char_by_id = {c.id: c for c in proj.characters}
-                loc_by_id = {l.id: l for l in proj.locations}
+                loc_by_id = {lo.id: lo for lo in proj.locations}
                 char_by_name = {c.name.lower(): c for c in proj.characters}
-                loc_by_name = {l.name.lower(): l for l in proj.locations}
+                loc_by_name = {lo.name.lower(): lo for lo in proj.locations}
                 ts_label_map: dict[str, str] = {}
                 for ts_obj in proj.time_slots:
-                    key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+                    key = (
+                        f"{ts_obj.label}({ts_obj.description})"
+                        if ts_obj.description
+                        else ts_obj.label
+                    )
                     ts_label_map[key] = ts_obj.id
                     if ts_obj.label not in ts_label_map:
                         ts_label_map[ts_obj.label] = ts_obj.id
@@ -646,7 +655,8 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                         logger.warning(
                             "run_focused_deduction: skipping unresolvable deduction "
                             "char_id={!r} loc_id={!r}",
-                            raw_char_id, raw_loc_id,
+                            raw_char_id,
+                            raw_loc_id,
                         )
                         continue
 
@@ -679,18 +689,21 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 logger.info(
                     "run_focused_deduction: count={} unknown_chars={} unknown_locs={}",
-                    count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
+                    count,
+                    list(unknown_char_names.values()),
+                    list(unknown_loc_names.values()),
                 )
                 logger.info(
                     "run_focused_deduction: {} of {} deductions added (rest were duplicates or unresolvable)",
-                    count, len(deductions_data),
+                    count,
+                    len(deductions_data),
                 )
 
                 refresh()
 
                 # Filter out already-registered entities
                 existing_char_names = {c.name for c in proj.characters}
-                existing_loc_names = {l.name for l in proj.locations}
+                existing_loc_names = {lo.name for lo in proj.locations}
                 final_unknown_chars = [
                     n for n in unknown_char_names.values() if n not in existing_char_names
                 ]
@@ -787,8 +800,15 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 elif deductions_data:
                     dlg = ft.AlertDialog(
                         title=ft.Text("🎯 自定义推断结果"),
-                        content=ft.Text(f"AI 返回了 {len(deductions_data)} 条推断，但均已存在于审查队列中，无新增内容。"),
-                        actions=[ft.TextButton("确定", on_click=lambda e: (setattr(dlg, 'open', False), page.update()))],
+                        content=ft.Text(
+                            f"AI 返回了 {len(deductions_data)} 条推断，但均已存在于审查队列中，无新增内容。"
+                        ),
+                        actions=[
+                            ft.TextButton(
+                                "确定",
+                                on_click=lambda e: (setattr(dlg, "open", False), page.update()),
+                            )
+                        ],
                     )
                     page.overlay.append(dlg)
                     dlg.open = True
@@ -796,14 +816,23 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 else:
                     dlg = ft.AlertDialog(
                         title=ft.Text("🎯 自定义推断结果"),
-                        content=ft.Column([
-                            ft.Text("AI 未返回任何推断结果。"),
-                            ft.Text("可能的原因：", weight=ft.FontWeight.BOLD, size=13),
-                            ft.Text("• 所选范围内的位置已全部确认", size=13),
-                            ft.Text("• 当前信息不足以推断", size=13),
-                            ft.Text("• 尝试扩大选择范围或添加更多剧本证据", size=13),
-                        ], tight=True, spacing=6),
-                        actions=[ft.TextButton("确定", on_click=lambda e: (setattr(dlg, 'open', False), page.update()))],
+                        content=ft.Column(
+                            [
+                                ft.Text("AI 未返回任何推断结果。"),
+                                ft.Text("可能的原因：", weight=ft.FontWeight.BOLD, size=13),
+                                ft.Text("• 所选范围内的位置已全部确认", size=13),
+                                ft.Text("• 当前信息不足以推断", size=13),
+                                ft.Text("• 尝试扩大选择范围或添加更多剧本证据", size=13),
+                            ],
+                            tight=True,
+                            spacing=6,
+                        ),
+                        actions=[
+                            ft.TextButton(
+                                "确定",
+                                on_click=lambda e: (setattr(dlg, "open", False), page.update()),
+                            )
+                        ],
                     )
                     page.overlay.append(dlg)
                     dlg.open = True
@@ -817,7 +846,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         if missing_chars or missing_locs or missing_times or unanalyzed_scripts:
             warning_parts: list[ft.Control] = []
             if unanalyzed_scripts:
-                warning_parts.append(ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13))
+                warning_parts.append(
+                    ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13)
+                )
             if missing_chars:
                 warning_parts.append(ft.Text(f"人物：{', '.join(missing_chars)}", size=13))
             if missing_locs:
@@ -837,14 +868,20 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             _focused_warn_dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("⚠️ 发现未添加的实体"),
-                content=ft.Column([
-                    ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
-                    *warning_parts,
-                    ft.Text(
-                        "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
-                        size=13, color=ft.Colors.GREY, italic=True,
-                    ),
-                ], tight=True, spacing=8),
+                content=ft.Column(
+                    [
+                        ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
+                        *warning_parts,
+                        ft.Text(
+                            "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
+                            size=13,
+                            color=ft.Colors.GREY,
+                            italic=True,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=8,
+                ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_focused_warn),
                     ft.ElevatedButton("仍然继续推断", on_click=_proceed_focused_warn),
@@ -872,12 +909,12 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     )
 
     chip_section_controls.append(
-        ft.Text("💡 推断会综合已有剧本、事实和规则进行分析", size=12, color=ft.Colors.GREY, italic=True)
+        ft.Text(
+            "💡 推断会综合已有剧本、事实和规则进行分析", size=12, color=ft.Colors.GREY, italic=True
+        )
     )
 
-    chip_section_controls.append(
-        ft.Row(controls=[focused_button], spacing=10)
-    )
+    chip_section_controls.append(ft.Row(controls=[focused_button], spacing=10))
 
     # chip_section_controls will be appended in a collapsible panel at the bottom
 
@@ -942,9 +979,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
     # --- Location × Time Matrix ---
     controls.append(ft.Divider())
-    controls.append(
-        ft.Text("地点 × 时间矩阵", size=18, weight=ft.FontWeight.BOLD)
-    )
+    controls.append(ft.Text("地点 × 时间矩阵", size=18, weight=ft.FontWeight.BOLD))
 
     loc_rows = build_location_time_data(proj)
     if not loc_rows:
@@ -1059,10 +1094,7 @@ def _build_statistics(proj: Project) -> ft.Control:
     pending = 0
     for char in proj.characters:
         for ts in proj.time_slots:
-            has_fact = any(
-                f.character_id == char.id and f.time_slot == ts.id
-                for f in proj.facts
-            )
+            has_fact = any(f.character_id == char.id and f.time_slot == ts.id for f in proj.facts)
             has_pending = any(
                 d.character_id == char.id
                 and d.time_slot == ts.id
@@ -1143,9 +1175,7 @@ def _show_new_entities_dialog(
     content_rows: list[ft.Control] = []
 
     if new_chars:
-        content_rows.append(
-            ft.Text("🆕 新发现的人物", size=15, weight=ft.FontWeight.BOLD)
-        )
+        content_rows.append(ft.Text("🆕 新发现的人物", size=15, weight=ft.FontWeight.BOLD))
         for ch in new_chars:
             name = ch.get("name", "").strip()
             if not name:
@@ -1155,17 +1185,13 @@ def _show_new_entities_dialog(
             char_checks.append((cb, name))
             row_controls: list[ft.Control] = [cb]
             if context:
-                row_controls.append(
-                    ft.Text(context, size=12, color=ft.Colors.GREY, expand=True)
-                )
+                row_controls.append(ft.Text(context, size=12, color=ft.Colors.GREY, expand=True))
             content_rows.append(ft.Row(controls=row_controls, spacing=8))
 
     if new_locs:
         if new_chars:
             content_rows.append(ft.Divider())
-        content_rows.append(
-            ft.Text("🆕 新发现的地点", size=15, weight=ft.FontWeight.BOLD)
-        )
+        content_rows.append(ft.Text("🆕 新发现的地点", size=15, weight=ft.FontWeight.BOLD))
         for lo in new_locs:
             name = lo.get("name", "").strip()
             if not name:
@@ -1175,9 +1201,7 @@ def _show_new_entities_dialog(
             loc_checks.append((cb, name))
             row_controls = [cb]
             if context:
-                row_controls.append(
-                    ft.Text(context, size=12, color=ft.Colors.GREY, expand=True)
-                )
+                row_controls.append(ft.Text(context, size=12, color=ft.Colors.GREY, expand=True))
             content_rows.append(ft.Row(controls=row_controls, spacing=8))
 
     if not char_checks and not loc_checks:
@@ -1197,7 +1221,7 @@ def _show_new_entities_dialog(
                     added += 1
         for cb, name in loc_checks:
             if cb.value:
-                existing = {l.name for l in app_state.current_project.locations}
+                existing = {lo.name for lo in app_state.current_project.locations}
                 if name not in existing:
                     app_state.add_location(name=name)
                     added += 1

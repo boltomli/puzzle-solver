@@ -13,7 +13,6 @@ from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
 from src.services.config import load_config
 from src.ui.state import app_state
 
-
 # ---------------------------------------------------------------------------
 # Pure logic helpers — tested by tests/test_scripts.py
 # ---------------------------------------------------------------------------
@@ -39,12 +38,16 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     evidence = fact_dict.get("evidence", "")
 
     char = next((c for c in proj.characters if c.name.lower() == char_name.lower()), None)
-    loc = next((l for l in proj.locations if l.name.lower() == loc_name.lower()), None)
+    loc = next((lo for lo in proj.locations if lo.name.lower() == loc_name.lower()), None)
 
     if not char or not loc:
         logger.warning(
             "_create_single_deduction: cannot resolve char={!r}(found={}) loc={!r}(found={}) ts={!r}",
-            char_name, char is not None, loc_name, loc is not None, ts,
+            char_name,
+            char is not None,
+            loc_name,
+            loc is not None,
+            ts,
         )
         return False
 
@@ -80,19 +83,22 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     if added:
         logger.info(
             "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
-            char_name, loc_name, ts, conf,
+            char_name,
+            loc_name,
+            ts,
+            conf,
         )
     else:
         logger.debug(
             "_create_single_deduction: skipped duplicate char={!r} loc={!r} ts={!r}",
-            char_name, loc_name, ts,
+            char_name,
+            loc_name,
+            ts,
         )
     return added
 
 
-def _create_deductions_from_facts(
-    proj, direct_facts: list[dict], script_id: str
-) -> int:
+def _create_deductions_from_facts(proj, direct_facts: list[dict], script_id: str) -> int:
     """Convert direct_facts from analysis into pending Deduction objects.
 
     Maps character_name and location_name back to IDs from the project.
@@ -117,12 +123,8 @@ def _create_deductions_from_facts(
         evidence = df.get("evidence", "")
 
         # Map names to IDs
-        char = next(
-            (c for c in proj.characters if c.name.lower() == char_name.lower()), None
-        )
-        loc = next(
-            (l for l in proj.locations if l.name.lower() == loc_name.lower()), None
-        )
+        char = next((c for c in proj.characters if c.name.lower() == char_name.lower()), None)
+        loc = next((lo for lo in proj.locations if lo.name.lower() == loc_name.lower()), None)
 
         # Skip if we can't resolve both character and location
         if not char or not loc:
@@ -227,7 +229,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     # --- Unanalyzed scripts banner ---
     unanalyzed = [s for s in proj.scripts if s.analysis_result is None]
     if unanalyzed and _is_api_configured():
-        unanalyzed_names = [s.title or f"剧本 #{s.metadata.source_order or '?'}" for s in unanalyzed]
+        unanalyzed_names = [
+            s.title or f"剧本 #{s.metadata.source_order or '?'}" for s in unanalyzed
+        ]
 
         async def auto_analyze_all(e):
             analyze_btn.disabled = True
@@ -247,13 +251,17 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 content=ft.Row(
                     controls=[
                         ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE),
-                        ft.Column([
-                            ft.Text(
-                                f"有 {len(unanalyzed)} 个剧本尚未分析：{', '.join(unanalyzed_names)}",
-                                size=14,
-                            ),
-                            analyze_btn,
-                        ], spacing=6, expand=True),
+                        ft.Column(
+                            [
+                                ft.Text(
+                                    f"有 {len(unanalyzed)} 个剧本尚未分析：{', '.join(unanalyzed_names)}",
+                                    size=14,
+                                ),
+                                analyze_btn,
+                            ],
+                            spacing=6,
+                            expand=True,
+                        ),
                     ],
                     spacing=10,
                 ),
@@ -363,9 +371,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             )
         )
     else:
-        controls.append(
-            ft.Text(f"已有 {len(scripts)} 个剧本", size=16, weight=ft.FontWeight.W_500)
-        )
+        controls.append(ft.Text(f"已有 {len(scripts)} 个剧本", size=16, weight=ft.FontWeight.W_500))
 
         for script in reversed(scripts):  # Newest first
             header_text = _script_header(script)
@@ -377,6 +383,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             def make_analyze_handler(s_id):
                 async def handler(e):
                     await _run_script_analysis(page, s_id, refresh, show_snackbar)
+
                 return handler
 
             def make_view_results_handler(s_result, s_id):
@@ -384,11 +391,13 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     _show_analysis_results_dialog(
                         page, proj, s_result, s_id, refresh, show_snackbar
                     )
+
                 return handler
 
             def make_delete_handler(s_id, s_title):
                 def handler(e):
                     _confirm_delete_script(page, s_id, s_title, refresh, show_snackbar)
+
                 return handler
 
             if script.analysis_result is not None:
@@ -396,9 +405,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     ft.ElevatedButton(
                         "📊 查看分析结果",
                         icon=ft.Icons.ASSESSMENT,
-                        on_click=make_view_results_handler(
-                            script.analysis_result, script.id
-                        ),
+                        on_click=make_view_results_handler(script.analysis_result, script.id),
                         color=ft.Colors.GREEN,
                     )
                 )
@@ -426,9 +433,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ft.TextButton(
                     "删除",
                     icon=ft.Icons.DELETE,
-                    on_click=make_delete_handler(
-                        script.id, script.title or "无标题"
-                    ),
+                    on_click=make_delete_handler(script.id, script.title or "无标题"),
                     style=ft.ButtonStyle(color=ft.Colors.RED),
                 )
             )
@@ -537,7 +542,6 @@ def _show_analysis_results_dialog(
     # --- "全部添加实体" button ---
     has_new_entities = new_chars or new_locs or new_time_refs
     if has_new_entities:
-
         add_all_entities_btn = ft.ElevatedButton(
             "全部添加实体",
             icon=ft.Icons.PLAYLIST_ADD,
@@ -822,7 +826,10 @@ def _show_analysis_results_dialog(
 
             # Check if character and location can be resolved
             char = next((c for c in proj.characters if c.name.lower() == char_n.lower()), None)
-            loc = next((loc_obj for loc_obj in proj.locations if loc_obj.name.lower() == loc_n.lower()), None)
+            loc = next(
+                (loc_obj for loc_obj in proj.locations if loc_obj.name.lower() == loc_n.lower()),
+                None,
+            )
             can_resolve = char is not None and loc is not None
 
             def make_add_single_fact(fact_dict, btn_ref):
@@ -879,16 +886,12 @@ def _show_analysis_results_dialog(
                 ),
             ]
             if evidence:
-                fact_card_controls.append(
-                    ft.Text(evidence, size=12, color=ft.Colors.GREY)
-                )
+                fact_card_controls.append(ft.Text(evidence, size=12, color=ft.Colors.GREY))
 
             content_controls.append(
                 ft.Card(
                     content=ft.Container(
-                        content=ft.Column(
-                            controls=fact_card_controls, spacing=4
-                        ),
+                        content=ft.Column(controls=fact_card_controls, spacing=4),
                         padding=12,
                     ),
                 )
@@ -896,9 +899,7 @@ def _show_analysis_results_dialog(
 
     # Empty state for analysis
     if not chars_mentioned and not locs_mentioned and not time_refs and not direct_facts:
-        content_controls.append(
-            ft.Text("未提取到有效信息", color=ft.Colors.GREY, size=14)
-        )
+        content_controls.append(ft.Text("未提取到有效信息", color=ft.Colors.GREY, size=14))
 
     # Navigation hint
     if direct_facts:
@@ -1022,7 +1023,8 @@ async def _run_script_analysis(
         app_state.save_script_analysis(script_id, result)
         logger.info(
             "scripts: analyze_script done script_id={!r} direct_facts={}",
-            script_id, len(result.get("direct_facts", [])),
+            script_id,
+            len(result.get("direct_facts", [])),
         )
         if on_complete:
             try:

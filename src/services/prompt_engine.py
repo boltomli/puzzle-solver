@@ -133,7 +133,7 @@ class PromptEngine:
         parts.append("\n## CONFIRMED FACTS")
         for fact in project.facts:
             char = next((c for c in project.characters if c.id == fact.character_id), None)
-            loc = next((l for l in project.locations if l.id == fact.location_id), None)
+            loc = next((lo for lo in project.locations if lo.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
             ts = ts_map.get(fact.time_slot)
@@ -144,7 +144,7 @@ class PromptEngine:
         parts.append("\n## REJECTED DEDUCTIONS (以下推断已被用户明确拒绝，绝对不要再次建议：)")
         for rej in project.rejections:
             char = next((c for c in project.characters if c.id == rej.character_id), None)
-            loc = next((l for l in project.locations if l.id == rej.location_id), None)
+            loc = next((lo for lo in project.locations if lo.id == rej.location_id), None)
             char_name = char.name if char else rej.character_id
             loc_name = loc.name if loc else rej.location_id
             ts = ts_map.get(rej.time_slot)
@@ -161,15 +161,11 @@ class PromptEngine:
             filter_time_slots: list[str] = focus_filter.get("time_slots") or []
 
             if filter_char_ids:
-                char_names = [
-                    c.name for c in project.characters if c.id in filter_char_ids
-                ]
+                char_names = [c.name for c in project.characters if c.id in filter_char_ids]
                 if char_names:
                     focus_lines.append(f"- 人物: {', '.join(char_names)}")
             if filter_loc_ids:
-                loc_names = [
-                    l.name for l in project.locations if l.id in filter_loc_ids
-                ]
+                loc_names = [lo.name for lo in project.locations if lo.id in filter_loc_ids]
                 if loc_names:
                     focus_lines.append(f"- 地点: {', '.join(loc_names)}")
             if filter_time_slots:
@@ -191,12 +187,8 @@ class PromptEngine:
         # Unfilled slots (filtered when focus_filter is provided)
         parts.append("\n## UNFILLED SLOTS TO DEDUCE")
 
-        filter_char_ids_set: set[str] = set(
-            (focus_filter or {}).get("character_ids") or []
-        )
-        filter_time_slots_set: set[str] = set(
-            (focus_filter or {}).get("time_slots") or []
-        )
+        filter_char_ids_set: set[str] = set((focus_filter or {}).get("character_ids") or [])
+        filter_time_slots_set: set[str] = set((focus_filter or {}).get("time_slots") or [])
 
         for char in project.characters:
             # Skip character if focus filter specifies characters and this one is not in it
@@ -204,10 +196,15 @@ class PromptEngine:
                 continue
             for ts in project.time_slots:
                 # Skip time slot if focus filter specifies time slots and this one is not in it
-                if filter_time_slots_set and ts.id not in filter_time_slots_set and ts.label not in filter_time_slots_set:
+                if (
+                    filter_time_slots_set
+                    and ts.id not in filter_time_slots_set
+                    and ts.label not in filter_time_slots_set
+                ):
                     continue
                 has_fact = any(
-                    f.character_id == char.id and f.time_slot in (ts.id, ts.label) for f in project.facts
+                    f.character_id == char.id and f.time_slot in (ts.id, ts.label)
+                    for f in project.facts
                 )
                 if not has_fact:
                     parts.append(f"- {char.name} at {_format_ts(ts)}: ???")
@@ -216,7 +213,7 @@ class PromptEngine:
         parts.append("\n## SCRIPT EVIDENCE")
         for script in project.scripts:
             parts.append(
-                f"\n### Script: \"{script.title or 'Untitled'}\" "
+                f'\n### Script: "{script.title or "Untitled"}" '
                 f"(#{script.metadata.source_order or '?'})"
             )
             if script.metadata.stated_time:
@@ -233,10 +230,10 @@ class PromptEngine:
         parts.append("Analyze all evidence above. Produce deductions for unfilled slots.")
         parts.append("Respond with ONLY a JSON object in this format:")
         parts.append(
-            '```json\n'
-            '{\n'
+            "```json\n"
+            "{\n"
             '  "deductions": [\n'
-            '    {\n'
+            "    {\n"
             '      "character_id": "<uuid>",\n'
             '      "location_id": "<uuid>",\n'
             '      "time_slot": "time slot label",\n'
@@ -244,20 +241,20 @@ class PromptEngine:
             '      "reasoning": "Step-by-step explanation",\n'
             '      "supporting_script_ids": ["<uuid>"],\n'
             '      "depends_on_fact_ids": ["<uuid>"]\n'
-            '    }\n'
-            '  ],\n'
+            "    }\n"
+            "  ],\n"
             '  "new_characters_detected": [\n'
             '    {"name": "string", "found_in_script_id": "<uuid>", "context": "string"}\n'
-            '  ],\n'
+            "  ],\n"
             '  "new_locations_detected": [\n'
             '    {"name": "string", "found_in_script_id": "<uuid>", "context": "string"}\n'
-            '  ],\n'
+            "  ],\n"
             '  "contradictions_detected": [\n'
             '    {"description": "string", "involved_fact_ids": [], "involved_script_ids": []}\n'
-            '  ],\n'
+            "  ],\n"
             '  "notes": "string"\n'
-            '}\n'
-            '```'
+            "}\n"
+            "```"
         )
         parts.append("Focus on CERTAIN and HIGH confidence deductions first.")
 
@@ -287,14 +284,16 @@ class PromptEngine:
             parts.append(line)
 
         # Known time slots
-        parts.append(f"\n### Known Time Slots\n{', '.join(_format_ts(ts) for ts in project.time_slots)}")
+        parts.append(
+            f"\n### Known Time Slots\n{', '.join(_format_ts(ts) for ts in project.time_slots)}"
+        )
 
         # Confirmed facts
         ts_map = {ts.id: ts for ts in project.time_slots}
         parts.append("\n### Confirmed Facts")
         for fact in project.facts:
             char = next((c for c in project.characters if c.id == fact.character_id), None)
-            loc = next((l for l in project.locations if l.id == fact.location_id), None)
+            loc = next((lo for lo in project.locations if lo.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
             ts = ts_map.get(fact.time_slot)
@@ -329,51 +328,51 @@ class PromptEngine:
         parts.append(f"```\n{script.raw_text}\n```")
 
         # Response format
-        parts.append('\nAnalyze this script and respond with ONLY this JSON:')
+        parts.append("\nAnalyze this script and respond with ONLY this JSON:")
         parts.append(
-            '```json\n'
-            '{\n'
+            "```json\n"
+            "{\n"
             '  "characters_mentioned": [\n'
-            '    {\n'
+            "    {\n"
             '      "character_id": "<uuid or null if new>",\n'
             '      "name": "string",\n'
             '      "is_new": true,\n'
             '      "context": "How they appear in the script"\n'
-            '    }\n'
-            '  ],\n'
+            "    }\n"
+            "  ],\n"
             '  "locations_mentioned": [\n'
-            '    {\n'
+            "    {\n"
             '      "location_id": "<uuid or null if new>",\n'
             '      "name": "string",\n'
             '      "is_new": true,\n'
             '      "context": "How it appears in the script"\n'
-            '    }\n'
-            '  ],\n'
+            "    }\n"
+            "  ],\n"
             '  "time_references": [\n'
-            '    {\n'
+            "    {\n"
             '      "time_slot": "time slot label or null",\n'
             '      "reference_text": "The text that indicates this time",\n'
             '      "is_explicit": true\n'
-            '    }\n'
-            '  ],\n'
+            "    }\n"
+            "  ],\n"
             '  "direct_facts": [\n'
-            '    {\n'
+            "    {\n"
             '      "character_name": "string",\n'
             '      "location_name": "string",\n'
             '      "time_slot": "time slot label",\n'
             '      "confidence": "certain|high|medium|low",\n'
             '      "evidence": "Quote or explanation from the script"\n'
-            '    }\n'
-            '  ],\n'
+            "    }\n"
+            "  ],\n"
             '  "alias_candidates": [\n'
-            '    {\n'
+            "    {\n"
             '      "name_in_script": "string",\n'
             '      "might_be_character_id": "<uuid>",\n'
             '      "reasoning": "Why this might be an alias"\n'
-            '    }\n'
-            '  ]\n'
-            '}\n'
-            '```'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "```"
         )
 
         return "\n".join(parts)

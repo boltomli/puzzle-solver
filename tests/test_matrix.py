@@ -11,9 +11,8 @@ from src.models.puzzle import (
     Location,
     Project,
     SourceType,
-    TimeSlot,
 )
-from src.ui.pages.matrix import build_matrix_data, build_location_time_data
+from src.ui.pages.matrix import build_location_time_data, build_matrix_data
 
 
 @pytest.fixture

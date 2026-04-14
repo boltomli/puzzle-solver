@@ -1,7 +1,8 @@
 """Tests for Pydantic data models."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 
 from src.models.puzzle import (
     Character,
@@ -20,7 +21,6 @@ from src.models.puzzle import (
     Script,
     ScriptMetadata,
     SourceType,
-    TimeSlot,
 )
 
 
@@ -133,6 +133,7 @@ class TestRejection:
             reason="Contradicted by script evidence",
         )
         assert r.reason == "Contradicted by script evidence"
+
 
 class TestDeduction:
     def test_create(self):
