@@ -184,7 +184,9 @@ class JsonRepository:
                     char.description = description
                 if status is not None:
                     char.status = status
-                self._cache.invalidate_character("update", char, old_name=old_name)
+                self._cache.invalidate_character(
+                    "update", char, old_name=old_name, remaining_characters=proj.characters
+                )
                 self.save()
                 return char
         return None
@@ -205,7 +207,7 @@ class JsonRepository:
 
         # Remove the character entity
         proj.characters = [c for c in proj.characters if c.id != character_id]
-        self._cache.invalidate_character("remove", char)
+        self._cache.invalidate_character("remove", char, remaining_characters=proj.characters)
 
         # Cascade: remove referencing facts, deductions, rejections
         self._cascade_delete_referencing_records(
@@ -263,7 +265,9 @@ class JsonRepository:
                     loc.aliases = aliases
                 if description is not None:
                     loc.description = description
-                self._cache.invalidate_location("update", loc, old_name=old_name)
+                self._cache.invalidate_location(
+                    "update", loc, old_name=old_name, remaining_locations=proj.locations
+                )
                 self.save()
                 return loc
         return None
@@ -280,7 +284,7 @@ class JsonRepository:
             return False
 
         proj.locations = [lo for lo in proj.locations if lo.id != location_id]
-        self._cache.invalidate_location("remove", loc)
+        self._cache.invalidate_location("remove", loc, remaining_locations=proj.locations)
 
         # Cascade: remove referencing facts, deductions, rejections
         self._cascade_delete_referencing_records(

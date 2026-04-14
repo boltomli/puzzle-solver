@@ -1247,3 +1247,152 @@ class TestCrossAreaIntegration:
         assert p.time_slots[0].description == "Morning"
         assert len(p.hints) == 1
         assert len(p.ignored_entities) == 1
+
+
+# ===========================================================================
+# CRUD remove + dedup index consistency tests
+# ===========================================================================
+
+
+class TestRemoveEntityDedupIndexClean:
+    """After removing a character/location/time_slot with dependent
+    facts/deductions/rejections, the dedup indexes (fact_index, pending_index,
+    rejection_index) must be clean — no stale triples remain."""
+
+    def test_remove_character_cleans_fact_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        repo_with_project.add_fact(char.id, loc.id, ts.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.fact_index
+        repo_with_project.remove_character(char.id)
+        assert triple not in repo_with_project._cache.fact_index
+
+    def test_remove_character_cleans_pending_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.pending_index
+        repo_with_project.remove_character(char.id)
+        assert triple not in repo_with_project._cache.pending_index
+
+    def test_remove_character_cleans_rejection_index(
+        self, repo_with_project: JsonRepository
+    ) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        repo_with_project.reject_deduction(ded.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.rejection_index
+        repo_with_project.remove_character(char.id)
+        assert triple not in repo_with_project._cache.rejection_index
+
+    def test_remove_location_cleans_fact_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        repo_with_project.add_fact(char.id, loc.id, ts.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.fact_index
+        repo_with_project.remove_location(loc.id)
+        assert triple not in repo_with_project._cache.fact_index
+
+    def test_remove_location_cleans_pending_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.pending_index
+        repo_with_project.remove_location(loc.id)
+        assert triple not in repo_with_project._cache.pending_index
+
+    def test_remove_location_cleans_rejection_index(
+        self, repo_with_project: JsonRepository
+    ) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        repo_with_project.reject_deduction(ded.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.rejection_index
+        repo_with_project.remove_location(loc.id)
+        assert triple not in repo_with_project._cache.rejection_index
+
+    def test_remove_timeslot_cleans_fact_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        repo_with_project.add_fact(char.id, loc.id, ts.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.fact_index
+        repo_with_project.remove_time_slot(ts.id)
+        assert triple not in repo_with_project._cache.fact_index
+
+    def test_remove_timeslot_cleans_pending_index(self, repo_with_project: JsonRepository) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.pending_index
+        repo_with_project.remove_time_slot(ts.id)
+        assert triple not in repo_with_project._cache.pending_index
+
+    def test_remove_timeslot_cleans_rejection_index(
+        self, repo_with_project: JsonRepository
+    ) -> None:
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts = repo_with_project.add_time_slot("09:00")
+        ded = _make_deduction(char.id, loc.id, ts.id)
+        repo_with_project.add_deduction(ded)
+        repo_with_project.reject_deduction(ded.id)
+        triple = (char.id, loc.id, ts.id)
+        assert triple in repo_with_project._cache.rejection_index
+        repo_with_project.remove_time_slot(ts.id)
+        assert triple not in repo_with_project._cache.rejection_index
+
+    def test_remove_character_with_mixed_records_cleans_all_indexes(
+        self, repo_with_project: JsonRepository
+    ) -> None:
+        """Character with facts, pending deductions, and rejections — all cleaned."""
+        char = repo_with_project.add_character("Alice")
+        loc = repo_with_project.add_location("Library")
+        ts1 = repo_with_project.add_time_slot("09:00")
+        ts2 = repo_with_project.add_time_slot("10:00")
+        ts3 = repo_with_project.add_time_slot("11:00")
+        # Fact
+        repo_with_project.add_fact(char.id, loc.id, ts1.id)
+        # Pending deduction
+        ded_pending = _make_deduction(char.id, loc.id, ts2.id)
+        repo_with_project.add_deduction(ded_pending)
+        # Rejected deduction
+        ded_reject = _make_deduction(char.id, loc.id, ts3.id)
+        repo_with_project.add_deduction(ded_reject)
+        repo_with_project.reject_deduction(ded_reject.id)
+
+        triple_fact = (char.id, loc.id, ts1.id)
+        triple_pending = (char.id, loc.id, ts2.id)
+        triple_rejected = (char.id, loc.id, ts3.id)
+
+        assert triple_fact in repo_with_project._cache.fact_index
+        assert triple_pending in repo_with_project._cache.pending_index
+        assert triple_rejected in repo_with_project._cache.rejection_index
+
+        repo_with_project.remove_character(char.id)
+
+        assert triple_fact not in repo_with_project._cache.fact_index
+        assert triple_pending not in repo_with_project._cache.pending_index
+        assert triple_rejected not in repo_with_project._cache.rejection_index

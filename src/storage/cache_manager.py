@@ -102,14 +102,18 @@ class CacheManager:
         char: Character | None,
         *,
         old_name: str | None = None,
+        remaining_characters: list[Character] | None = None,
     ) -> None:
         """Update char_by_id and char_by_name after a character mutation.
 
         Parameters
         ----------
-        action   : "add" | "remove" | "update"
-        char     : the character being mutated (current state)
-        old_name : the previous name (only needed for "update")
+        action               : "add" | "remove" | "update"
+        char                 : the character being mutated (current state)
+        old_name             : the previous name (only needed for "update")
+        remaining_characters : the project's character list *after* the mutation
+                               (needed for "remove"/"update" to find a fallback
+                               when duplicate lowercase names exist)
         """
         if char is None:
             return
@@ -122,6 +126,12 @@ class CacheManager:
             key = char.name.lower()
             if self.char_by_name.get(key) is char:
                 del self.char_by_name[key]
+                # Fallback: scan remaining characters for another with the same lowercase name
+                if remaining_characters is not None:
+                    for other in remaining_characters:
+                        if other.name.lower() == key:
+                            self.char_by_name[key] = other
+                            break
         elif action == "update":
             self.char_by_id[char.id] = char
             # Remove old name entry if it points to this char
@@ -129,6 +139,12 @@ class CacheManager:
                 old_key = old_name.lower()
                 if self.char_by_name.get(old_key) is char:
                     del self.char_by_name[old_key]
+                    # Fallback: scan remaining characters for another with the same old lowercase name
+                    if remaining_characters is not None:
+                        for other in remaining_characters:
+                            if other is not char and other.name.lower() == old_key:
+                                self.char_by_name[old_key] = other
+                                break
             self.char_by_name[char.name.lower()] = char
 
     def invalidate_location(
@@ -137,14 +153,18 @@ class CacheManager:
         loc: Location | None,
         *,
         old_name: str | None = None,
+        remaining_locations: list[Location] | None = None,
     ) -> None:
         """Update loc_by_id and loc_by_name after a location mutation.
 
         Parameters
         ----------
-        action   : "add" | "remove" | "update"
-        loc      : the location being mutated (current state)
-        old_name : the previous name (only needed for "update")
+        action              : "add" | "remove" | "update"
+        loc                 : the location being mutated (current state)
+        old_name            : the previous name (only needed for "update")
+        remaining_locations : the project's location list *after* the mutation
+                              (needed for "remove"/"update" to find a fallback
+                              when duplicate lowercase names exist)
         """
         if loc is None:
             return
@@ -156,12 +176,24 @@ class CacheManager:
             key = loc.name.lower()
             if self.loc_by_name.get(key) is loc:
                 del self.loc_by_name[key]
+                # Fallback: scan remaining locations for another with the same lowercase name
+                if remaining_locations is not None:
+                    for other in remaining_locations:
+                        if other.name.lower() == key:
+                            self.loc_by_name[key] = other
+                            break
         elif action == "update":
             self.loc_by_id[loc.id] = loc
             if old_name is not None:
                 old_key = old_name.lower()
                 if self.loc_by_name.get(old_key) is loc:
                     del self.loc_by_name[old_key]
+                    # Fallback: scan remaining locations for another with the same old lowercase name
+                    if remaining_locations is not None:
+                        for other in remaining_locations:
+                            if other is not loc and other.name.lower() == old_key:
+                                self.loc_by_name[old_key] = other
+                                break
             self.loc_by_name[loc.name.lower()] = loc
 
     def invalidate_time_slot(self, action: str, ts: TimeSlot | None) -> None:

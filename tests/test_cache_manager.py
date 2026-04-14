@@ -1092,3 +1092,169 @@ class TestDuplicateNames:
         cm.rebuild(proj)
         assert cm.ts_label_map["08:00"] == ts1.id
         assert cm.ts_label_map["12:00"] == ts2.id
+
+
+# ---------------------------------------------------------------------------
+# Tests: duplicate-name fallback on remove/update (CRITICAL bug fix)
+# ---------------------------------------------------------------------------
+
+
+class TestDuplicateNameFallbackOnRemove:
+    """When removing the by-name 'winner' for a duplicate lowercase name,
+    CacheManager should fall back to another entity with the same key."""
+
+    def test_remove_char_by_name_winner_installs_fallback(self):
+        """Remove the by-name winner → another char with same lowered name takes over."""
+        proj = make_project()
+        char_a = add_char(proj, "alice")  # first
+        char_b = add_char(proj, "Alice")  # last-writer-wins after rebuild
+        cm = CacheManager()
+        cm.rebuild(proj)
+        # After rebuild, char_b is the winner (last-writer-wins)
+        assert cm.char_by_name["alice"] is char_b
+
+        # Simulate removing char_b from the project list
+        remaining = [char_a]
+        cm.invalidate_character("remove", char_b, remaining_characters=remaining)
+        # char_a should now be the fallback winner
+        assert "alice" in cm.char_by_name
+        assert cm.char_by_name["alice"] is char_a
+
+    def test_remove_char_by_name_winner_no_remaining_clears_key(self):
+        """Remove the only char with a given name → key is deleted entirely."""
+        proj = make_project()
+        char_a = add_char(proj, "Alice")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        cm.invalidate_character("remove", char_a, remaining_characters=[])
+        assert "alice" not in cm.char_by_name
+
+    def test_remove_char_non_winner_leaves_winner_intact(self):
+        """Remove a char that is NOT the by-name winner → winner unchanged."""
+        proj = make_project()
+        char_a = add_char(proj, "alice")
+        char_b = add_char(proj, "Alice")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        assert cm.char_by_name["alice"] is char_b
+
+        remaining = [char_b]
+        cm.invalidate_character("remove", char_a, remaining_characters=remaining)
+        # char_b is still the winner
+        assert cm.char_by_name["alice"] is char_b
+
+    def test_remove_loc_by_name_winner_installs_fallback(self):
+        """Remove the by-name winner location → fallback to another with same key."""
+        proj = make_project()
+        loc_a = add_loc(proj, "library")
+        loc_b = add_loc(proj, "Library")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        assert cm.loc_by_name["library"] is loc_b
+
+        remaining = [loc_a]
+        cm.invalidate_location("remove", loc_b, remaining_locations=remaining)
+        assert "library" in cm.loc_by_name
+        assert cm.loc_by_name["library"] is loc_a
+
+    def test_remove_loc_by_name_winner_no_remaining_clears_key(self):
+        """Remove the only location with a given name → key deleted."""
+        proj = make_project()
+        loc = add_loc(proj, "Library")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        cm.invalidate_location("remove", loc, remaining_locations=[])
+        assert "library" not in cm.loc_by_name
+
+    def test_remove_loc_non_winner_leaves_winner_intact(self):
+        """Remove a location NOT the winner → winner unchanged."""
+        proj = make_project()
+        loc_a = add_loc(proj, "library")
+        loc_b = add_loc(proj, "Library")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        assert cm.loc_by_name["library"] is loc_b
+
+        remaining = [loc_b]
+        cm.invalidate_location("remove", loc_a, remaining_locations=remaining)
+        assert cm.loc_by_name["library"] is loc_b
+
+    def test_remove_char_three_duplicates_picks_first_remaining(self):
+        """With 3 chars sharing same lowered name, removing winner picks first remaining."""
+        proj = make_project()
+        char_a = add_char(proj, "alice")
+        char_b = add_char(proj, "Alice")
+        char_c = add_char(proj, "ALICE")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        # Last-writer-wins: char_c
+        assert cm.char_by_name["alice"] is char_c
+
+        remaining = [char_a, char_b]
+        cm.invalidate_character("remove", char_c, remaining_characters=remaining)
+        # First matching remaining entity becomes the new winner
+        assert cm.char_by_name["alice"] is char_a
+
+
+class TestDuplicateNameFallbackOnUpdate:
+    """When updating a char/loc name and the old name was the by-name winner,
+    CacheManager should fall back to another entity with the same old name."""
+
+    def test_update_char_name_installs_fallback_for_old_name(self):
+        """Rename char that is the by-name winner → another char takes over old key."""
+        proj = make_project()
+        char_a = add_char(proj, "alice")
+        char_b = add_char(proj, "Alice")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        assert cm.char_by_name["alice"] is char_b
+
+        # Rename char_b from "Alice" → "Betty"
+        char_b.name = "Betty"
+        cm.invalidate_character(
+            "update", char_b, old_name="Alice", remaining_characters=[char_a, char_b]
+        )
+        # Old key "alice" should now point to char_a
+        assert cm.char_by_name["alice"] is char_a
+        # New key "betty" should point to char_b
+        assert cm.char_by_name["betty"] is char_b
+
+    def test_update_char_name_no_fallback_clears_old_key(self):
+        """Rename the only char with a name → old key disappears."""
+        proj = make_project()
+        char = add_char(proj, "Alice")
+        cm = CacheManager()
+        cm.rebuild(proj)
+
+        char.name = "Betty"
+        cm.invalidate_character("update", char, old_name="Alice", remaining_characters=[char])
+        assert "alice" not in cm.char_by_name
+        assert cm.char_by_name["betty"] is char
+
+    def test_update_loc_name_installs_fallback_for_old_name(self):
+        """Rename location that is the by-name winner → fallback for old key."""
+        proj = make_project()
+        loc_a = add_loc(proj, "library")
+        loc_b = add_loc(proj, "Library")
+        cm = CacheManager()
+        cm.rebuild(proj)
+        assert cm.loc_by_name["library"] is loc_b
+
+        loc_b.name = "Archive"
+        cm.invalidate_location(
+            "update", loc_b, old_name="Library", remaining_locations=[loc_a, loc_b]
+        )
+        assert cm.loc_by_name["library"] is loc_a
+        assert cm.loc_by_name["archive"] is loc_b
+
+    def test_update_loc_name_no_fallback_clears_old_key(self):
+        """Rename the only location with a name → old key disappears."""
+        proj = make_project()
+        loc = add_loc(proj, "Library")
+        cm = CacheManager()
+        cm.rebuild(proj)
+
+        loc.name = "Archive"
+        cm.invalidate_location("update", loc, old_name="Library", remaining_locations=[loc])
+        assert "library" not in cm.loc_by_name
+        assert cm.loc_by_name["archive"] is loc

@@ -570,6 +570,48 @@ class TestCascadeAtomicPersistence:
         assert len(repo2.current_project.time_slots) == 0
         assert len(repo2.current_project.facts) == 0
 
+    def test_timeslot_cascade_persists_deductions_and_rejections(
+        self, repo: JsonRepository, tmp_path: Path
+    ) -> None:
+        """Removing a time slot cascades facts, deductions, AND rejections;
+        all three are gone from disk after reload."""
+        char = repo.add_character("Alice")
+        loc1 = repo.add_location("Library")
+        loc2 = repo.add_location("Garden")
+        loc3 = repo.add_location("Kitchen")
+        ts = repo.add_time_slot("09:00")
+        # Create a fact referencing the time slot
+        repo.add_fact(char.id, loc1.id, ts.id)
+        # Create a pending deduction referencing the time slot
+        ded_pending = _make_deduction(char.id, loc2.id, ts.id)
+        repo.add_deduction(ded_pending)
+        # Create a rejected deduction+rejection referencing the time slot
+        ded_reject = _make_deduction(char.id, loc3.id, ts.id)
+        repo.add_deduction(ded_reject)
+        repo.reject_deduction(ded_reject.id)
+
+        # Verify records exist before removal
+        assert len(repo.current_project.facts) == 1
+        assert len(repo.current_project.deductions) == 2
+        assert len(repo.current_project.rejections) == 1
+
+        # Remove the time slot (cascades all dependent records)
+        repo.remove_time_slot(ts.id)
+
+        # Verify in-memory state
+        assert len(repo.current_project.facts) == 0
+        assert len(repo.current_project.deductions) == 0
+        assert len(repo.current_project.rejections) == 0
+
+        # Reload from disk and verify persistence
+        proj_id = repo.current_project.id
+        repo2 = JsonRepository(store=JsonStore(data_dir=tmp_path))
+        repo2.load_project(proj_id)
+        assert len(repo2.current_project.time_slots) == 0
+        assert len(repo2.current_project.facts) == 0
+        assert len(repo2.current_project.deductions) == 0
+        assert len(repo2.current_project.rejections) == 0
+
     def test_script_cascade_persists(self, repo: JsonRepository, tmp_path: Path) -> None:
         char = repo.add_character("Alice")
         loc = repo.add_location("Library")
