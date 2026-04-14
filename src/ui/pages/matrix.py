@@ -9,6 +9,7 @@ import flet as ft
 from src.models.puzzle import (
     Deduction,
     DeductionStatus,
+    EntityKind,
     Project,
 )
 from src.services.config import load_config
@@ -48,15 +49,27 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             continue
         for ch in script.analysis_result.get("characters_mentioned", []):
             name = ch.get("name", "").strip()
-            if name and name.lower() not in existing_chars:
+            if (
+                name
+                and name.lower() not in existing_chars
+                and not app_state.is_entity_ignored(EntityKind.character, name)
+            ):
                 missing_chars.add(name)
         for lo in script.analysis_result.get("locations_mentioned", []):
             name = lo.get("name", "").strip()
-            if name and name.lower() not in existing_locs:
+            if (
+                name
+                and name.lower() not in existing_locs
+                and not app_state.is_entity_ignored(EntityKind.location, name)
+            ):
                 missing_locs.add(name)
         for tr in script.analysis_result.get("time_references", []):
             ts = (tr.get("time_slot") or "").strip()
-            if ts and ts not in existing_times:
+            if (
+                ts
+                and ts not in existing_times
+                and not app_state.is_entity_ignored(EntityKind.time_slot, ts)
+            ):
                 missing_times.add(ts)
 
     return sorted(missing_chars), sorted(missing_locs), sorted(missing_times), unanalyzed
@@ -396,14 +409,20 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 refresh()
 
-                # Filter out already-registered entities
+                # Filter out already-registered and ignored entities
                 existing_char_names = {c.name for c in proj.characters}
                 existing_loc_names = {lo.name for lo in proj.locations}
                 final_unknown_chars = [
-                    n for n in unknown_char_names.values() if n not in existing_char_names
+                    n
+                    for n in unknown_char_names.values()
+                    if n not in existing_char_names
+                    and not app_state.is_entity_ignored(EntityKind.character, n)
                 ]
                 final_unknown_locs = [
-                    n for n in unknown_loc_names.values() if n not in existing_loc_names
+                    n
+                    for n in unknown_loc_names.values()
+                    if n not in existing_loc_names
+                    and not app_state.is_entity_ignored(EntityKind.location, n)
                 ]
 
                 if final_unknown_chars or final_unknown_locs:
@@ -694,14 +713,20 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 refresh()
 
-                # Filter out already-registered entities
+                # Filter out already-registered and ignored entities
                 existing_char_names = {c.name for c in proj.characters}
                 existing_loc_names = {lo.name for lo in proj.locations}
                 final_unknown_chars = [
-                    n for n in unknown_char_names.values() if n not in existing_char_names
+                    n
+                    for n in unknown_char_names.values()
+                    if n not in existing_char_names
+                    and not app_state.is_entity_ignored(EntityKind.character, n)
                 ]
                 final_unknown_locs = [
-                    n for n in unknown_loc_names.values() if n not in existing_loc_names
+                    n
+                    for n in unknown_loc_names.values()
+                    if n not in existing_loc_names
+                    and not app_state.is_entity_ignored(EntityKind.location, n)
                 ]
 
                 if final_unknown_chars or final_unknown_locs:

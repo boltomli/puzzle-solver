@@ -8,7 +8,6 @@ Shows deduction history (accepted/rejected) in a collapsible section.
 import flet as ft
 
 from src.models.puzzle import ConfidenceLevel, DeductionStatus
-from src.services.deduction import DeductionService
 from src.ui.state import app_state
 
 # Confidence display order and styling
@@ -235,22 +234,8 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                 def handler(e):
                     fact = app_state.accept_deduction(ded_id)
                     if fact:
-                        try:
-                            new_deds = DeductionService.run_cascade(proj)
-                            count = 0
-                            for new_ded in new_deds:
-                                if app_state.add_deduction(new_ded):
-                                    count += 1
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text(f"已接受推断。消元发现 {count} 条新推断")
-                            )
-                            page.snack_bar.open = True
-                        except Exception as exc:
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text(f"已接受推断，但消元推断出错: {exc}"),
-                                bgcolor=ft.Colors.AMBER,
-                            )
-                            page.snack_bar.open = True
+                        page.snack_bar = ft.SnackBar(ft.Text("已接受推断"))
+                        page.snack_bar.open = True
                     else:
                         page.snack_bar = ft.SnackBar(
                             ft.Text("操作失败：推断未找到"),

@@ -88,10 +88,10 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     panel_list = ft.ExpansionPanelList(
         elevation=2,
         controls=[
-            _build_time_slots_panel(page, refresh, show_snackbar),
             _build_characters_panel(page, refresh, show_snackbar),
             _build_locations_panel(page, refresh, show_snackbar),
             _build_hints_panel(page, refresh, show_snackbar),
+            _build_time_slots_panel(page, refresh, show_snackbar),
             _build_facts_panel(page, refresh, show_snackbar),
         ],
     )
@@ -205,7 +205,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             )
 
     return ft.ExpansionPanel(
-        expanded=True,
+        expanded=False,
         header=ft.ListTile(title=ft.Text("🕐 时间管理")),
         content=ft.Container(
             content=ft.Column(
@@ -452,7 +452,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
-                width=320,
+                col={"xs": 12, "sm": 6, "md": 4},
             )
             char_controls.append(card)
 
@@ -466,7 +466,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     content_controls: list[ft.Control] = []
     if card_items:
-        content_controls.append(ft.Row(controls=card_items, wrap=True, spacing=8, run_spacing=8))
+        content_controls.append(ft.ResponsiveRow(controls=card_items, spacing=8, run_spacing=8))
     content_controls.extend(non_card_items)
 
     return ft.ExpansionPanel(
@@ -660,7 +660,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
-                width=320,
+                col={"xs": 12, "sm": 6, "md": 4},
             )
             loc_controls.append(card)
 
@@ -675,7 +675,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     loc_content_controls: list[ft.Control] = []
     if loc_card_items:
         loc_content_controls.append(
-            ft.Row(controls=loc_card_items, wrap=True, spacing=8, run_spacing=8)
+            ft.ResponsiveRow(controls=loc_card_items, spacing=8, run_spacing=8)
         )
     loc_content_controls.extend(loc_non_card_items)
 

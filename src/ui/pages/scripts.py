@@ -605,7 +605,10 @@ def _show_analysis_results_dialog(
                 row_controls.append(ft.Text(context, size=12, color=ft.Colors.GREY))
 
             right_controls: list[ft.Control] = []
-            if is_new:
+            is_ignored_char = app_state.is_entity_ignored(EntityKind.character, name)
+            if is_new and is_ignored_char:
+                right_controls.append(ft.Text("已忽略", color=ft.Colors.GREY, size=13))
+            elif is_new:
                 action_row = ft.Row(spacing=4)
 
                 def make_add_char(ch_name, row_ref):
@@ -704,15 +707,12 @@ def _show_analysis_results_dialog(
                 ]
                 right_controls.append(action_row)
 
-            content_controls.append(
-                ft.Row(
-                    controls=[
-                        ft.Row(controls=row_controls, spacing=8),
-                        ft.Row(controls=right_controls),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                )
-            )
+            item_controls: list[ft.Control] = [
+                ft.Row(controls=row_controls, spacing=8, wrap=True),
+            ]
+            if right_controls:
+                item_controls.append(ft.Row(controls=right_controls, spacing=4, wrap=True))
+            content_controls.append(ft.Column(controls=item_controls, spacing=4))
 
     # --- Locations ---
     if locs_mentioned:
@@ -742,7 +742,10 @@ def _show_analysis_results_dialog(
                 row_controls.append(ft.Text(context, size=12, color=ft.Colors.GREY))
 
             right_controls: list[ft.Control] = []
-            if is_new:
+            is_ignored_loc = app_state.is_entity_ignored(EntityKind.location, name)
+            if is_new and is_ignored_loc:
+                right_controls.append(ft.Text("已忽略", color=ft.Colors.GREY, size=13))
+            elif is_new:
                 action_row = ft.Row(spacing=4)
 
                 def make_add_loc(lo_name, row_ref):
@@ -839,15 +842,12 @@ def _show_analysis_results_dialog(
                 ]
                 right_controls.append(action_row)
 
-            content_controls.append(
-                ft.Row(
-                    controls=[
-                        ft.Row(controls=row_controls, spacing=8),
-                        ft.Row(controls=right_controls),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                )
-            )
+            item_controls: list[ft.Control] = [
+                ft.Row(controls=row_controls, spacing=8, wrap=True),
+            ]
+            if right_controls:
+                item_controls.append(ft.Row(controls=right_controls, spacing=4, wrap=True))
+            content_controls.append(ft.Column(controls=item_controls, spacing=4))
 
     # --- Time references ---
     if time_refs:
@@ -897,7 +897,10 @@ def _show_analysis_results_dialog(
                 )
 
             right_controls: list[ft.Control] = []
-            if is_new_ts:
+            is_ignored_ts = is_valid_ts and app_state.is_entity_ignored(EntityKind.time_slot, ts)
+            if is_new_ts and is_ignored_ts:
+                right_controls.append(ft.Text("已忽略", color=ft.Colors.GREY, size=13))
+            elif is_new_ts:
                 action_row = ft.Row(spacing=4)
 
                 def make_add_time(time_slot, row_ref):
@@ -933,15 +936,12 @@ def _show_analysis_results_dialog(
                 ]
                 right_controls.append(action_row)
 
-            content_controls.append(
-                ft.Row(
-                    controls=[
-                        ft.Row(controls=row_controls, spacing=8),
-                        ft.Row(controls=right_controls),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                )
-            )
+            item_controls: list[ft.Control] = [
+                ft.Row(controls=row_controls, spacing=8, wrap=True),
+            ]
+            if right_controls:
+                item_controls.append(ft.Row(controls=right_controls, spacing=4, wrap=True))
+            content_controls.append(ft.Column(controls=item_controls, spacing=4))
 
     # --- Direct facts (deductions) ---
     if direct_facts:
@@ -993,27 +993,6 @@ def _show_analysis_results_dialog(
             conf = df.get("confidence", "medium")
             evidence = df.get("evidence", "")
 
-            # Check if character and location can be resolved
-            char = next((c for c in proj.characters if c.name.lower() == char_n.lower()), None)
-            loc = next(
-                (loc_obj for loc_obj in proj.locations if loc_obj.name.lower() == loc_n.lower()),
-                None,
-            )
-            can_resolve = char is not None and loc is not None
-
-            def make_add_single_fact(fact_dict, btn_ref):
-                def handler(e):
-                    success = _create_single_deduction(proj, fact_dict, script_id)
-                    if success:
-                        show_snackbar("已添加到审查队列", ft.Colors.GREEN)
-                        btn_ref.disabled = True
-                        btn_ref.text = "已添加"
-                    else:
-                        show_snackbar("无法添加：请先添加对应的人物和地点", ft.Colors.AMBER)
-                    page.update()
-
-                return handler
-
             fact_row_controls: list[ft.Control] = [
                 ft.Text(f"👤 {char_n}", weight=ft.FontWeight.BOLD),
                 ft.Text(f"📍 {loc_n}"),
@@ -1039,20 +1018,30 @@ def _show_analysis_results_dialog(
             add_fact_btn = ft.OutlinedButton(
                 "添加到审查",
                 icon=ft.Icons.ADD_TASK,
-                disabled=not can_resolve,
-                tooltip=None if can_resolve else "请先添加对应的人物和地点",
             )
-            if can_resolve:
-                add_fact_btn.on_click = make_add_single_fact(df, add_fact_btn)
+
+            def make_add_single_fact(fact_dict, btn_ref):
+                def handler(e):
+                    current_proj = app_state.current_project
+                    if not current_proj:
+                        show_snackbar("项目未加载", ft.Colors.RED)
+                        return
+                    success = _create_single_deduction(current_proj, fact_dict, script_id)
+                    if success:
+                        show_snackbar("已添加到审查队列", ft.Colors.GREEN)
+                        btn_ref.disabled = True
+                        btn_ref.text = "已添加"
+                    else:
+                        show_snackbar("无法添加：请先添加对应的人物、地点和时间段", ft.Colors.AMBER)
+                    page.update()
+
+                return handler
+
+            add_fact_btn.on_click = make_add_single_fact(df, add_fact_btn)
 
             fact_card_controls: list[ft.Control] = [
-                ft.Row(
-                    controls=[
-                        ft.Row(controls=fact_row_controls, spacing=8),
-                        add_fact_btn,
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
+                ft.Row(controls=fact_row_controls, spacing=8, wrap=True),
+                ft.Row(controls=[add_fact_btn], alignment=ft.MainAxisAlignment.END),
             ]
             if evidence:
                 fact_card_controls.append(ft.Text(evidence, size=12, color=ft.Colors.GREY))
@@ -1098,16 +1087,15 @@ def _show_analysis_results_dialog(
 
     dlg = ft.AlertDialog(
         title=ft.Text("📊 剧本分析结果"),
-        content=ft.Container(
-            content=ft.Column(
-                controls=content_controls,
-                spacing=10,
-                scroll=ft.ScrollMode.AUTO,
-            ),
-            width=560,
+        content=ft.Column(
+            controls=content_controls,
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+            width=520,
             height=500,
         ),
         actions=[ft.TextButton("关闭", on_click=close_dialog)],
+        actions_alignment=ft.MainAxisAlignment.END,
     )
     page.overlay.append(dlg)
     dlg.open = True
