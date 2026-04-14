@@ -5,8 +5,6 @@ import pytest
 from src.models.puzzle import (
     Character,
     CharacterStatus,
-    ConfidenceLevel,
-    Deduction,
     Fact,
     Hint,
     HintType,
@@ -354,7 +352,9 @@ class TestScriptAnalysisPrompt:
         _, user_prompt = engine.build_script_analysis_prompt(project, target_script)
         # The other scripts section should contain script-A but not script-B title
         # Script-B's text appears in "New Script Text" section, not in "Other Scripts"
-        other_scripts_section = user_prompt.split("### Other Scripts")[1].split("### New Script Text")[0]
+        other_scripts_section = user_prompt.split("### Other Scripts")[1].split(
+            "### New Script Text"
+        )[0]
         assert "第一幕" in other_scripts_section
         assert "第二幕" not in other_scripts_section
 

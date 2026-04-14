@@ -71,9 +71,12 @@ class JsonStore:
         project = Project.model_validate_json(json_data)
         logger.info(
             "load_project: loaded {!r} (id={}) chars={} locs={} scripts={} facts={}",
-            project.name, project_id,
-            len(project.characters), len(project.locations),
-            len(project.scripts), len(project.facts),
+            project.name,
+            project_id,
+            len(project.characters),
+            len(project.locations),
+            len(project.scripts),
+            len(project.facts),
         )
         return project
 
@@ -85,7 +88,9 @@ class JsonStore:
         file_path.write_text(json_data, encoding="utf-8")
         logger.debug(
             "save_project: saved {!r} (id={}) to {}",
-            project.name, project.id, file_path,
+            project.name,
+            project.id,
+            file_path,
         )
 
     def create_project(

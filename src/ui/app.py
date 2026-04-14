@@ -27,9 +27,7 @@ def main(page: ft.Page):
     # --- Theme toggle ---
     def toggle_theme(e):
         page.theme_mode = (
-            ft.ThemeMode.LIGHT
-            if page.theme_mode == ft.ThemeMode.DARK
-            else ft.ThemeMode.DARK
+            ft.ThemeMode.LIGHT if page.theme_mode == ft.ThemeMode.DARK else ft.ThemeMode.DARK
         )
         page.update()
 
@@ -104,9 +102,6 @@ def main(page: ft.Page):
 
     def settings_content():
         return build_settings_tab(page)
-
-    # --- Content area ---
-    content_area = ft.Container(expand=True)
 
     def rebuild_content():
         """Rebuild the entire page content based on current state."""
@@ -183,9 +178,7 @@ def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control
     for proj in projects:
         desc_controls = []
         if proj.description:
-            desc_controls.append(
-                ft.Text(proj.description, color=ft.Colors.GREY, size=13)
-            )
+            desc_controls.append(ft.Text(proj.description, color=ft.Colors.GREY, size=13))
         desc_controls.append(
             ft.Row(
                 controls=[
@@ -269,12 +262,8 @@ def _build_project_view(
 
     # --- Build project selector dropdown ---
     project_summaries = app_state.list_projects()
-    current_id = (
-        app_state.current_project.id if app_state.current_project else None
-    )
-    project_options = [
-        ft.dropdown.Option(key=s.id, text=s.name) for s in project_summaries
-    ]
+    current_id = app_state.current_project.id if app_state.current_project else None
+    project_options = [ft.dropdown.Option(key=s.id, text=s.name) for s in project_summaries]
     project_dropdown = ft.Dropdown(
         label="切换项目",
         value=current_id,
@@ -312,7 +301,9 @@ def _build_project_view(
     def on_tab_change(e):
         idx = e.control.selected_index
         tab_names = ["剧本", "矩阵", "管理", "审查", "设置"]
-        logger.debug("app: tab changed → {} ({})", idx, tab_names[idx] if idx < len(tab_names) else "?")
+        logger.debug(
+            "app: tab changed → {} ({})", idx, tab_names[idx] if idx < len(tab_names) else "?"
+        )
         tab_content_area.content = tab_content_builders[idx]()
         page.update()
 

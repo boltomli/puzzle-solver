@@ -1,11 +1,19 @@
 """Tests for the AppState manager."""
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from src.models.puzzle import CharacterStatus, ConfidenceLevel, Deduction, DeductionStatus, HintType, SourceType
+import pytest
+
+from src.models.puzzle import (
+    CharacterStatus,
+    ConfidenceLevel,
+    Deduction,
+    DeductionStatus,
+    HintType,
+    SourceType,
+)
 from src.storage.json_store import JsonStore
 from src.ui.state import AppState
 
@@ -27,15 +35,13 @@ def state(temp_data_dir):
 
 class TestAppStateProject:
     def test_create_project(self, state):
-        project = state.create_project(name="Test Mystery", description="A test")
+        state.create_project(name="Test Mystery", description="A test")
         assert state.current_project is not None
         assert state.current_project.name == "Test Mystery"
         assert state.current_project.description == "A test"
 
     def test_create_project_with_time_slots(self, state):
-        project = state.create_project(
-            name="Test", time_slots=["14:00", "15:00", "16:00"]
-        )
+        state.create_project(name="Test", time_slots=["14:00", "15:00", "16:00"])
         assert len(state.current_project.time_slots) == 3
 
     def test_load_project(self, state):
@@ -78,8 +84,6 @@ class TestAppStateProject:
         state.save()
         loaded = state.store.load_project(project.id)
         assert loaded.name == "Updated Name"
-
-
 
 
 class TestAppStateCharacters:
@@ -197,18 +201,14 @@ class TestAppStateFacts:
         state.create_project(name="Test", time_slots=["14:00"])
         char = state.add_character(name="Alice")
         loc = state.add_location(name="Library")
-        fact = state.add_fact(
-            character_id=char.id, location_id=loc.id, time_slot="14:00"
-        )
+        fact = state.add_fact(character_id=char.id, location_id=loc.id, time_slot="14:00")
         removed = state.remove_fact(fact.id)
         assert removed is True
         assert len(state.current_project.facts) == 0
 
     def test_add_fact_no_project(self, state):
         with pytest.raises(ValueError, match="No project loaded"):
-            state.add_fact(
-                character_id="c1", location_id="l1", time_slot="14:00"
-            )
+            state.add_fact(character_id="c1", location_id="l1", time_slot="14:00")
 
 
 class TestAppStateTimeSlots:
@@ -289,7 +289,8 @@ class TestDeductionIndex:
 
     def _make_deduction(self, char, loc, time_slot):
         """Helper to create a Deduction object."""
-        from src.models.puzzle import Deduction, ConfidenceLevel, DeductionStatus
+        from src.models.puzzle import ConfidenceLevel, Deduction, DeductionStatus
+
         return Deduction(
             character_id=char.id,
             location_id=loc.id,
@@ -450,20 +451,29 @@ class TestDeductionIndex:
 
         # Adding duplicates should fail
         ded_dup_fact = Deduction(
-            character_id=char.id, location_id=loc.id, time_slot=ts_id_14,
-            confidence=ConfidenceLevel.medium, reasoning="dup",
+            character_id=char.id,
+            location_id=loc.id,
+            time_slot=ts_id_14,
+            confidence=ConfidenceLevel.medium,
+            reasoning="dup",
         )
         assert state.add_deduction(ded_dup_fact) is False
 
         ded_dup_pending = Deduction(
-            character_id=char.id, location_id=loc.id, time_slot=ts_id_15,
-            confidence=ConfidenceLevel.medium, reasoning="dup",
+            character_id=char.id,
+            location_id=loc.id,
+            time_slot=ts_id_15,
+            confidence=ConfidenceLevel.medium,
+            reasoning="dup",
         )
         assert state.add_deduction(ded_dup_pending) is False
 
         ded_dup_rejection = Deduction(
-            character_id=char2.id, location_id=loc.id, time_slot=ts_id_14,
-            confidence=ConfidenceLevel.medium, reasoning="dup",
+            character_id=char2.id,
+            location_id=loc.id,
+            time_slot=ts_id_14,
+            confidence=ConfidenceLevel.medium,
+            reasoning="dup",
         )
         assert state.add_deduction(ded_dup_rejection) is False
 

@@ -1,0 +1,30 @@
+{
+  "featureId": "fix-scrutiny-repo-foundation",
+  "reviewedAt": "2026-04-14T22:10:00Z",
+  "commitId": "7f94cf1",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix commit addresses the three prior scrutiny failures: CacheManager now restores duplicate-name by-name mappings on remove/update, JsonRepository coverage now proves dedup indexes are cleaned after cascades, and the time-slot cascade persistence test now reloads facts, deductions, and rejections from disk.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The original cache-manager and json-repo-crud transcripts show the worker repeatedly struggling with unavailable Create/Edit-style tools before proceeding. The current refactor-worker skill does not warn about adapting when those tools are absent in this environment.",
+      "evidence": "worker-transcripts.jsonl entries for b7676957-3427-49b5-9d1e-6f3abfe8bc25 and aaca7bb7-8dda-4940-b189-5e7854f85d57 contain many failed Create/Edit attempts; SKILL.md focuses on procedure but not tool-surface caveats."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The architecture note that Script.metadata.characters_mentioned stores character names rather than IDs is now present in .factory/library/architecture.md, which closes the knowledge gap identified in the earlier json-repo-cascade review.",
+      "evidence": "D:\\exp\\puzzle-solver\\.factory\\library\\architecture.md includes: 'Script.metadata.characters_mentioned stores character names (not IDs).'"
+    }
+  ],
+  "addressesFailureFrom": [
+    ".factory/validation/repo-foundation/scrutiny/reviews/cache-manager.json",
+    ".factory/validation/repo-foundation/scrutiny/reviews/json-repo-crud.json",
+    ".factory/validation/repo-foundation/scrutiny/reviews/json-repo-cascade.json"
+  ],
+  "summary": "Pass. Commit 7f94cf1 resolves the earlier blocking scrutiny findings and adds targeted regression coverage without introducing new high-confidence bugs in the reviewed scope."
+}

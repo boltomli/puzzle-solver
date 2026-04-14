@@ -88,10 +88,10 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     panel_list = ft.ExpansionPanelList(
         elevation=2,
         controls=[
-            _build_time_slots_panel(page, refresh, show_snackbar),
             _build_characters_panel(page, refresh, show_snackbar),
             _build_locations_panel(page, refresh, show_snackbar),
             _build_hints_panel(page, refresh, show_snackbar),
+            _build_time_slots_panel(page, refresh, show_snackbar),
             _build_facts_panel(page, refresh, show_snackbar),
         ],
     )
@@ -108,6 +108,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 # =============================================================================
 # 1. 🕐 时间管理
 # =============================================================================
+
 
 def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     """Time slot management panel."""
@@ -179,19 +180,32 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 return lambda e: on_reorder_slot(slot, 1)
 
             chip_controls.append(
-                ft.Row(controls=[
-                    ft.Chip(
-                        label=ft.Text(chip_text),
-                        delete_icon_color=ft.Colors.RED,
-                        on_delete=make_delete_handler(ts),
-                    ),
-                    ft.IconButton(icon=ft.Icons.ARROW_UPWARD, on_click=make_up_handler(ts), icon_size=16, tooltip="上移"),
-                    ft.IconButton(icon=ft.Icons.ARROW_DOWNWARD, on_click=make_down_handler(ts), icon_size=16, tooltip="下移"),
-                ], spacing=0)
+                ft.Row(
+                    controls=[
+                        ft.Chip(
+                            label=ft.Text(chip_text),
+                            delete_icon_color=ft.Colors.RED,
+                            on_delete=make_delete_handler(ts),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.ARROW_UPWARD,
+                            on_click=make_up_handler(ts),
+                            icon_size=16,
+                            tooltip="上移",
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.ARROW_DOWNWARD,
+                            on_click=make_down_handler(ts),
+                            icon_size=16,
+                            tooltip="下移",
+                        ),
+                    ],
+                    spacing=0,
+                )
             )
 
     return ft.ExpansionPanel(
-        expanded=True,
+        expanded=False,
         header=ft.ListTile(title=ft.Text("🕐 时间管理")),
         content=ft.Container(
             content=ft.Column(
@@ -219,6 +233,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 # 2. 👤 人物管理
 # =============================================================================
 
+
 def _status_label(status: CharacterStatus) -> str:
     return {"confirmed": "已确认", "suspected": "疑似", "unknown": "未知"}.get(
         status.value, status.value
@@ -226,9 +241,11 @@ def _status_label(status: CharacterStatus) -> str:
 
 
 def _status_color(status: CharacterStatus) -> str:
-    return {"confirmed": ft.Colors.GREEN, "suspected": ft.Colors.ORANGE, "unknown": ft.Colors.GREY}.get(
-        status.value, ft.Colors.GREY
-    )
+    return {
+        "confirmed": ft.Colors.GREEN,
+        "suspected": ft.Colors.ORANGE,
+        "unknown": ft.Colors.GREY,
+    }.get(status.value, ft.Colors.GREY)
 
 
 def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
@@ -297,7 +314,9 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     def on_add_character(e):
         def do_add(name, aliases_str, desc, status_val):
-            aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            aliases = (
+                [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            )
             logger.info("manage: add_character name={!r}", name)
             app_state.add_character(
                 name=name,
@@ -313,7 +332,9 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def make_edit_handler(char):
         def handler(e):
             def do_update(name, aliases_str, desc, status_val):
-                aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                aliases = (
+                    [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                )
                 logger.info("manage: update_character id={!r} name={!r}", char.id, name)
                 app_state.update_character(
                     char.id,
@@ -355,7 +376,9 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text("此操作不可撤销"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
-                    ft.ElevatedButton("删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete),
+                    ft.ElevatedButton(
+                        "删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete
+                    ),
                 ],
             )
             page.overlay.append(dlg)
@@ -370,8 +393,16 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         char_controls.append(ft.Text("暂无人物，请添加", color=ft.Colors.GREY, size=13))
     else:
         for c in chars:
-            alias_text = ft.Text(f"别名: {', '.join(c.aliases)}", size=12, color=ft.Colors.GREY) if c.aliases else ft.Container()
-            desc_text = ft.Text(c.description, size=13, color=ft.Colors.GREY) if c.description else ft.Container()
+            alias_text = (
+                ft.Text(f"别名: {', '.join(c.aliases)}", size=12, color=ft.Colors.GREY)
+                if c.aliases
+                else ft.Container()
+            )
+            desc_text = (
+                ft.Text(c.description, size=13, color=ft.Colors.GREY)
+                if c.description
+                else ft.Container()
+            )
 
             status_badge = ft.Container(
                 content=ft.Text(_status_label(c.status), size=11, color=ft.Colors.WHITE),
@@ -401,8 +432,17 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                             ),
                             ft.Row(
                                 controls=[
-                                    ft.IconButton(icon=ft.Icons.EDIT, on_click=make_edit_handler(c), tooltip="编辑"),
-                                    ft.IconButton(icon=ft.Icons.DELETE, icon_color=ft.Colors.RED, on_click=make_delete_handler(c), tooltip="删除"),
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        on_click=make_edit_handler(c),
+                                        tooltip="编辑",
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE,
+                                        icon_color=ft.Colors.RED,
+                                        on_click=make_delete_handler(c),
+                                        tooltip="删除",
+                                    ),
                                 ],
                                 spacing=0,
                             ),
@@ -412,7 +452,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
-                width=320,
+                col={"xs": 12, "sm": 6, "md": 4},
             )
             char_controls.append(card)
 
@@ -426,7 +466,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     content_controls: list[ft.Control] = []
     if card_items:
-        content_controls.append(ft.Row(controls=card_items, wrap=True, spacing=8, run_spacing=8))
+        content_controls.append(ft.ResponsiveRow(controls=card_items, spacing=8, run_spacing=8))
     content_controls.extend(non_card_items)
 
     return ft.ExpansionPanel(
@@ -442,6 +482,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 # =============================================================================
 # 3. 📍 地点管理
 # =============================================================================
+
 
 def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     """Location management panel."""
@@ -497,7 +538,9 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     def on_add_location(e):
         def do_add(name, aliases_str, desc):
-            aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            aliases = (
+                [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+            )
             logger.info("manage: add_location name={!r}", name)
             app_state.add_location(
                 name=name,
@@ -512,7 +555,9 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     def make_edit_handler(loc):
         def handler(e):
             def do_update(name, aliases_str, desc):
-                aliases = [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                aliases = (
+                    [a.strip() for a in aliases_str.split(",") if a.strip()] if aliases_str else []
+                )
                 logger.info("manage: update_location id={!r} name={!r}", loc.id, name)
                 app_state.update_location(
                     loc.id,
@@ -552,7 +597,9 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text("此操作不可撤销"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
-                    ft.ElevatedButton("删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete),
+                    ft.ElevatedButton(
+                        "删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete
+                    ),
                 ],
             )
             page.overlay.append(dlg)
@@ -567,8 +614,16 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         loc_controls.append(ft.Text("暂无地点，请添加", color=ft.Colors.GREY, size=13))
     else:
         for loc in locs:
-            alias_text = ft.Text(f"别名: {', '.join(loc.aliases)}", size=12, color=ft.Colors.GREY) if loc.aliases else ft.Container()
-            desc_text = ft.Text(loc.description, size=13, color=ft.Colors.GREY) if loc.description else ft.Container()
+            alias_text = (
+                ft.Text(f"别名: {', '.join(loc.aliases)}", size=12, color=ft.Colors.GREY)
+                if loc.aliases
+                else ft.Container()
+            )
+            desc_text = (
+                ft.Text(loc.description, size=13, color=ft.Colors.GREY)
+                if loc.description
+                else ft.Container()
+            )
 
             card = ft.Card(
                 content=ft.Container(
@@ -585,8 +640,17 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                             ),
                             ft.Row(
                                 controls=[
-                                    ft.IconButton(icon=ft.Icons.EDIT, on_click=make_edit_handler(loc), tooltip="编辑"),
-                                    ft.IconButton(icon=ft.Icons.DELETE, icon_color=ft.Colors.RED, on_click=make_delete_handler(loc), tooltip="删除"),
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        on_click=make_edit_handler(loc),
+                                        tooltip="编辑",
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE,
+                                        icon_color=ft.Colors.RED,
+                                        on_click=make_delete_handler(loc),
+                                        tooltip="删除",
+                                    ),
                                 ],
                                 spacing=0,
                             ),
@@ -596,7 +660,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
-                width=320,
+                col={"xs": 12, "sm": 6, "md": 4},
             )
             loc_controls.append(card)
 
@@ -610,7 +674,9 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
     loc_content_controls: list[ft.Control] = []
     if loc_card_items:
-        loc_content_controls.append(ft.Row(controls=loc_card_items, wrap=True, spacing=8, run_spacing=8))
+        loc_content_controls.append(
+            ft.ResponsiveRow(controls=loc_card_items, spacing=8, run_spacing=8)
+        )
     loc_content_controls.extend(loc_non_card_items)
 
     return ft.ExpansionPanel(
@@ -626,6 +692,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 # =============================================================================
 # 4. 📋 游戏规则
 # =============================================================================
+
 
 def _hint_type_label(ht: HintType) -> str:
     return {"rule": "规则", "hint": "提示", "constraint": "约束"}.get(ht.value, ht.value)
@@ -731,7 +798,12 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                                 spacing=10,
                                 expand=True,
                             ),
-                            ft.IconButton(icon=ft.Icons.DELETE, icon_color=ft.Colors.RED, on_click=make_delete_handler(h), tooltip="删除"),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE,
+                                icon_color=ft.Colors.RED,
+                                on_click=make_delete_handler(h),
+                                tooltip="删除",
+                            ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -758,6 +830,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 # =============================================================================
 # 5. ✅ 手动添加事实
 # =============================================================================
+
 
 def _source_type_label(st: SourceType) -> str:
     return {
@@ -790,7 +863,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         )
         loc_dropdown = ft.Dropdown(
             label="地点 *",
-            options=[ft.dropdown.Option(key=l.id, text=l.name) for l in locs],
+            options=[ft.dropdown.Option(key=lo.id, text=lo.name) for lo in locs],
             width=180,
         )
         slot_dropdown = ft.Dropdown(
@@ -832,7 +905,9 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 return
             logger.info(
                 "manage: add_fact char={!r} loc={!r} ts={!r}",
-                char_dropdown.value, loc_dropdown.value, slot_dropdown.value,
+                char_dropdown.value,
+                loc_dropdown.value,
+                slot_dropdown.value,
             )
             app_state.add_fact(
                 character_id=char_dropdown.value,
@@ -850,7 +925,12 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     content=ft.Column(
                         controls=[
                             ft.Row(
-                                controls=[char_dropdown, loc_dropdown, slot_dropdown, evidence_field],
+                                controls=[
+                                    char_dropdown,
+                                    loc_dropdown,
+                                    slot_dropdown,
+                                    evidence_field,
+                                ],
                                 spacing=10,
                                 wrap=True,
                             ),
@@ -868,15 +948,18 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     if not facts:
         fact_controls.append(ft.Text("暂无事实记录", color=ft.Colors.GREY, size=13))
     else:
-        char_map = {c.id: c.name for c in chars}
-        loc_map = {l.id: l.name for l in locs}
+        cache = app_state.cache
 
-        fact_controls.append(ft.Text(f"已有 {len(facts)} 条事实", size=14, weight=ft.FontWeight.BOLD))
+        fact_controls.append(
+            ft.Text(f"已有 {len(facts)} 条事实", size=14, weight=ft.FontWeight.BOLD)
+        )
         fact_controls.append(ft.Divider())
 
         for f in facts:
-            char_name = char_map.get(f.character_id, f.character_id[:8])
-            loc_name = loc_map.get(f.location_id, f.location_id[:8])
+            char_obj = cache.char_by_id.get(f.character_id)
+            char_name = char_obj.name if char_obj else f.character_id[:8]
+            loc_obj = cache.loc_by_id.get(f.location_id)
+            loc_name = loc_obj.name if loc_obj else f.location_id[:8]
             source_label = _source_type_label(f.source_type)
 
             def make_fact_delete_handler(fact=f):
@@ -898,7 +981,12 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                         content=ft.Text("此操作不可撤销"),
                         actions=[
                             ft.TextButton("取消", on_click=do_cancel),
-                            ft.ElevatedButton("删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete),
+                            ft.ElevatedButton(
+                                "删除",
+                                color=ft.Colors.WHITE,
+                                bgcolor=ft.Colors.RED,
+                                on_click=do_delete,
+                            ),
                         ],
                     )
                     page.overlay.append(dlg)
@@ -910,7 +998,8 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             ts_obj = app_state.get_time_slot_by_id(f.time_slot)
             ts_display = (
                 (f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label)
-                if ts_obj else f.time_slot
+                if ts_obj
+                else f.time_slot
             )
             time_badge = ft.Container(
                 content=ft.Text(ts_display, size=11, color=ft.Colors.WHITE),
@@ -972,6 +1061,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             content=ft.Column(
                 controls=[*form_controls, *fact_controls],
                 spacing=8,
+                tight=True,
             ),
             padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),

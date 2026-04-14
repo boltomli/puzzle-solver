@@ -1,0 +1,57 @@
+{
+  "milestone": "repo-foundation",
+  "round": 2,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && .venv\\Scripts\\python -m pytest tests/ -v --tb=short -x",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && echo \"no typecheck configured\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && .venv\\Scripts\\ruff check src/ tests/",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill",
+      "suggestion": "Explicitly instruct workers that when a feature must mirror an existing API, they should read the current source-of-truth interface file in addition to dependency files before implementing a Protocol or wrapper.",
+      "evidence": "The cache-manager review noted the worker needed src/ui/state.py as the source-of-truth API surface; the current skill guidance emphasizes dependency files but not explicitly the live interface being mirrored.",
+      "isSystemic": false
+    },
+    {
+      "target": "skill",
+      "suggestion": "Add practical Windows file-creation guidance for large multiline files when structured edit tools are unavailable, so workers avoid wasting time on unsupported Create/Edit flows.",
+      "evidence": "The json-repo-crud review and worker feedback both describe repeated failed Create/Edit attempts before falling back to PowerShell/Python file writes in this environment.",
+      "isSystemic": false
+    },
+    {
+      "target": "skill",
+      "suggestion": "Add a note about adapting when Create/Edit-style tools are absent from the environment's actual tool surface, especially for refactor-worker missions that generate new files and tests.",
+      "evidence": "The original cache-manager and json-repo-crud transcripts show repeated failed attempts to use unavailable Create/Edit tools before the workers found environment-compatible alternatives.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Document that `Script.metadata.characters_mentioned` stores character names (not IDs), because cascade cleanup for character removal must match by name.",
+      "reason": "already-documented in .factory/library/architecture.md"
+    }
+  ],
+  "previousRound": ".factory/validation/repo-foundation/scrutiny/synthesis.json"
+}

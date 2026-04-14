@@ -1,17 +1,14 @@
 """Tests for the scripts page logic — specifically the deduction creation from analysis facts."""
 
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from src.models.puzzle import (
-    Character,
     ConfidenceLevel,
     DeductionStatus,
-    Location,
-    Project,
 )
 from src.storage.json_store import JsonStore
 from src.ui.state import AppState
@@ -213,8 +210,8 @@ class TestIsApiConfigured:
 
     def test_not_configured_by_default(self, tmp_path, monkeypatch):
         """With no config file, API should not be configured."""
-        from src.ui.pages.scripts import _is_api_configured
         import src.services.config as config_mod
+        from src.ui.pages.scripts import _is_api_configured
 
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", tmp_path / "config.json")
         assert _is_api_configured() is False
@@ -222,16 +219,19 @@ class TestIsApiConfigured:
     def test_configured_with_base_url_and_model(self, tmp_path, monkeypatch):
         """API is configured when base_url and model are set (key can be empty)."""
         import json
-        from src.ui.pages.scripts import _is_api_configured
+
         import src.services.config as config_mod
+        from src.ui.pages.scripts import _is_api_configured
 
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -240,16 +240,19 @@ class TestIsApiConfigured:
     def test_not_configured_without_model(self, tmp_path, monkeypatch):
         """API is not configured when model is missing."""
         import json
-        from src.ui.pages.scripts import _is_api_configured
+
         import src.services.config as config_mod
+        from src.ui.pages.scripts import _is_api_configured
 
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "key",
-                "model": "",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "key",
+                    "model": "",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)

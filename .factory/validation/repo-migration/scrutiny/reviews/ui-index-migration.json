@@ -1,0 +1,15 @@
+{
+  "featureId": "ui-index-migration",
+  "reviewedAt": "2026-04-15T00:00:00Z",
+  "commitId": "07cff8df3fe0dd12a820c7808fe0d6b25ed9ab01",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix commit resolves both prior ui-index-migration blockers. DeductionService now threads CacheManager-backed `ts_by_id` maps through all live prompt-building call paths, so prompt_engine no longer rebuilds time-slot maps in production usage. `build_location_time_data()` also now accepts an optional centralized `char_by_id` name map, and the matrix page passes a CacheManager-derived mapping at the call site.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "previous scrutiny round 1 blocking issues for ui-index-migration",
+  "summary": "Pass: the prior blocking issues are resolved. Live prompt-engine paths now use centralized cache indexes, and the location×time matrix helper is wired to centralized character-name indexes from AppState cache."
+}

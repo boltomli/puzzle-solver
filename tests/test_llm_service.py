@@ -13,31 +13,37 @@ class TestIsLocalUrl:
     """Unit tests for the _is_local_url() helper."""
 
     # --- should be detected as local ---
-    @pytest.mark.parametrize("url", [
-        "http://localhost:1234/v1",
-        "http://127.0.0.1:11434/v1",
-        "http://127.0.0.1/v1",
-        "http://[::1]/v1",              # IPv6 loopback — correct URL syntax
-        "http://lmac:1234/v1",          # single-label intranet hostname
-        "http://myserver/v1",            # single-label, no dots
-        "http://10.0.0.5:8080/v1",      # RFC-1918 class A
-        "http://172.16.0.1/v1",         # RFC-1918 class B lower bound
-        "http://172.31.255.255/v1",     # RFC-1918 class B upper bound
-        "http://192.168.1.100:1234/v1", # RFC-1918 class C
-        "http://169.254.0.1/v1",        # link-local
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:1234/v1",
+            "http://127.0.0.1:11434/v1",
+            "http://127.0.0.1/v1",
+            "http://[::1]/v1",  # IPv6 loopback — correct URL syntax
+            "http://lmac:1234/v1",  # single-label intranet hostname
+            "http://myserver/v1",  # single-label, no dots
+            "http://10.0.0.5:8080/v1",  # RFC-1918 class A
+            "http://172.16.0.1/v1",  # RFC-1918 class B lower bound
+            "http://172.31.255.255/v1",  # RFC-1918 class B upper bound
+            "http://192.168.1.100:1234/v1",  # RFC-1918 class C
+            "http://169.254.0.1/v1",  # link-local
+        ],
+    )
     def test_local_urls(self, url):
         assert _is_local_url(url) is True, f"expected local: {url}"
 
     # --- should NOT be detected as local (public / remote) ---
-    @pytest.mark.parametrize("url", [
-        "https://api.openai.com/v1",
-        "https://api.anthropic.com/v1",
-        "https://openrouter.ai/api/v1",
-        "http://my-vps.example.com:8080/v1",  # multi-label hostname → public
-        "http://8.8.8.8/v1",                  # Google DNS — globally routable
-        "http://1.1.1.1/v1",                  # Cloudflare DNS — globally routable
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.anthropic.com/v1",
+            "https://openrouter.ai/api/v1",
+            "http://my-vps.example.com:8080/v1",  # multi-label hostname → public
+            "http://8.8.8.8/v1",  # Google DNS — globally routable
+            "http://1.1.1.1/v1",  # Cloudflare DNS — globally routable
+        ],
+    )
     def test_public_urls(self, url):
         assert _is_local_url(url) is False, f"expected public: {url}"
 
@@ -70,11 +76,13 @@ class TestEnsureClient:
         """Should succeed with empty api_key, falling back to 'no-key'."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -90,11 +98,13 @@ class TestEnsureClient:
         """Should use the provided api_key when it is non-empty."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "https://api.openai.com/v1",
-                "api_key": "sk-test123",
-                "model": "gpt-4",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-test123",
+                    "model": "gpt-4",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -109,11 +119,13 @@ class TestEnsureClient:
         """Should default to 'gpt-4' when model is empty."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "https://api.openai.com/v1",
-                "api_key": "key",
-                "model": "",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "https://api.openai.com/v1",
+                    "api_key": "key",
+                    "model": "",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -126,11 +138,13 @@ class TestEnsureClient:
         """Local base_url should use no-proxy transport."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://lmac:1234/v1",
-                "api_key": "",
-                "model": "gemma",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://lmac:1234/v1",
+                    "api_key": "",
+                    "model": "gemma",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -145,11 +159,13 @@ class TestEnsureClient:
         """Public base_url should use the default httpx client (system proxy)."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "https://api.openai.com/v1",
-                "api_key": "sk-abc",
-                "model": "gpt-4",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-abc",
+                    "model": "gpt-4",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -164,12 +180,14 @@ class TestEnsureClient:
         """Custom timeout in config should be forwarded to _build_http_client."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-                "timeout": 600,
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                    "timeout": 600,
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -184,12 +202,14 @@ class TestEnsureClient:
         """timeout=0 in config means no timeout (passed as 0.0)."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-                "timeout": 0,
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                    "timeout": 0,
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -209,11 +229,13 @@ class TestListModels:
         """Should return a sorted list of model IDs."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -242,11 +264,13 @@ class TestListModels:
         """Should return empty list when no models available."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -269,6 +293,7 @@ class TestBuildHttpClient:
     def test_default_timeout_creates_timeout_object(self):
         """Default timeout (300s) should produce an httpx.Timeout with read=300."""
         import httpx
+
         from src.services.llm_service import _build_http_client
 
         client = _build_http_client("https://api.openai.com/v1", 300.0)
@@ -278,6 +303,7 @@ class TestBuildHttpClient:
     def test_zero_timeout_means_none(self):
         """timeout=0 should produce httpx.Timeout(None) — no timeout at all."""
         import httpx
+
         from src.services.llm_service import _build_http_client
 
         client = _build_http_client("http://localhost:11434/v1", 0.0)
@@ -288,6 +314,7 @@ class TestBuildHttpClient:
     def test_custom_timeout_value(self):
         """Custom timeout should be reflected in the client's timeout.read."""
         import httpx
+
         from src.services.llm_service import _build_http_client
 
         client = _build_http_client("https://api.openai.com/v1", 900.0)
@@ -303,11 +330,13 @@ class TestChatStream:
         """chat() should collect all streamed chunks into one string."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -351,11 +380,13 @@ class TestChatStream:
         """chat() should return '' when all chunks have None content."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
@@ -389,11 +420,13 @@ class TestChatStream:
         """chat() should re-raise exceptions raised by create()."""
         config_path = tmp_path / "config.json"
         config_path.write_text(
-            json.dumps({
-                "api_base_url": "http://localhost:11434/v1",
-                "api_key": "",
-                "model": "llama3",
-            }),
+            json.dumps(
+                {
+                    "api_base_url": "http://localhost:11434/v1",
+                    "api_key": "",
+                    "model": "llama3",
+                }
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)

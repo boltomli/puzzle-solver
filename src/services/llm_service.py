@@ -12,8 +12,7 @@ Proxy note:
 """
 
 import ipaddress
-import json
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
@@ -28,7 +27,7 @@ from src.services.config import load_config
 _PRIVATE_HOSTNAMES = {
     "localhost",
     "127.0.0.1",
-    "::1",    # bare IPv6 loopback (after urlparse strips brackets from [::1])
+    "::1",  # bare IPv6 loopback (after urlparse strips brackets from [::1])
 }
 
 
@@ -72,6 +71,7 @@ def _is_local_url(url: str) -> bool:
 # Transport factory
 # ---------------------------------------------------------------------------
 
+
 def _build_http_client(base_url: str, timeout: float = 300.0) -> httpx.AsyncClient:
     """Return an AsyncClient that bypasses the proxy for local URLs.
 
@@ -80,11 +80,15 @@ def _build_http_client(base_url: str, timeout: float = 300.0) -> httpx.AsyncClie
         timeout: Request timeout in seconds. 0 means no timeout.
     """
     # httpx.Timeout(None) means no timeout; otherwise set read/connect timeouts.
-    httpx_timeout = httpx.Timeout(None) if timeout == 0 else httpx.Timeout(
-        connect=10.0,
-        read=float(timeout),
-        write=float(timeout),
-        pool=10.0,
+    httpx_timeout = (
+        httpx.Timeout(None)
+        if timeout == 0
+        else httpx.Timeout(
+            connect=10.0,
+            read=float(timeout),
+            write=float(timeout),
+            pool=10.0,
+        )
     )
     if _is_local_url(base_url):
         logger.debug(
@@ -144,7 +148,10 @@ class LLMService:
         self._timeout = timeout
         logger.info(
             "LLMService client ready: base_url={!r} model={!r} local={} proxy_bypassed={} timeout={}s",
-            base_url, model, is_local, is_local,
+            base_url,
+            model,
+            is_local,
+            is_local,
             "∞" if timeout == 0 else timeout,
         )
 
@@ -211,7 +218,7 @@ class LLMService:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "user", "content": "Say 'connection ok' in JSON: {\"status\": \"ok\"}"}
+                    {"role": "user", "content": 'Say \'connection ok\' in JSON: {"status": "ok"}'}
                 ],
                 max_tokens=50,
             )

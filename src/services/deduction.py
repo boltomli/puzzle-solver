@@ -4,6 +4,8 @@ Coordinates between LLMService, PromptEngine, and the Project data model
 to produce deduction candidates for user review.
 """
 
+from __future__ import annotations
+
 import json
 import re
 
@@ -36,7 +38,7 @@ def _extract_json(raw: str) -> dict:
         pass
 
     # 2. Try extracting from markdown code block
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1).strip())
@@ -44,11 +46,11 @@ def _extract_json(raw: str) -> dict:
             pass
 
     # 3. Try finding first { to last }
-    first_brace = text.find('{')
-    last_brace = text.rfind('}')
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
     if first_brace != -1 and last_brace > first_brace:
         try:
-            return json.loads(text[first_brace:last_brace + 1])
+            return json.loads(text[first_brace : last_brace + 1])
         except (json.JSONDecodeError, ValueError):
             pass
 
@@ -63,8 +65,17 @@ class DeductionService:
         self.llm = LLMService()
         self.prompt_engine = PromptEngine()
 
-    async def run_deduction(self, project: Project) -> dict:
+    async def run_deduction(
+        self,
+        project: Project,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> dict:
         """Run a full AI deduction pass.
+
+        Args:
+            project: The project to run deduction on.
+            ts_by_id: Optional pre-built ts.id→TimeSlot map (e.g. from CacheManager).
+                Falls back to building from the project if not provided.
 
         Returns parsed response dict with deductions, new entities, contradictions.
         """
@@ -76,7 +87,9 @@ class DeductionService:
             len(project.scripts),
             len(project.facts),
         )
-        system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(project)
+        system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(
+            project, ts_by_id=ts_by_id
+        )
         logger.debug("run_deduction: prompt built (user_prompt_len={})", len(user_prompt))
         try:
             raw = await self.llm.chat(system_prompt, user_prompt)
@@ -93,7 +106,12 @@ class DeductionService:
             logger.exception("run_deduction: failed for project={!r}", project.name)
             raise
 
-    async def run_focused_deduction(self, project: Project, focus_filter: dict) -> dict:
+    async def run_focused_deduction(
+        self,
+        project: Project,
+        focus_filter: dict,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> dict:
         """Run a focused AI deduction pass limited to specific dimensions.
 
         Similar to run_deduction() but passes focus_filter to PromptEngine so the
@@ -105,6 +123,8 @@ class DeductionService:
                 - ``character_ids``: list of character IDs to focus on
                 - ``location_ids``: list of location IDs to focus on
                 - ``time_slots``: list of time slots to focus on
+            ts_by_id: Optional pre-built ts.id→TimeSlot map (e.g. from CacheManager).
+                Falls back to building from the project if not provided.
 
         Returns:
             Parsed response dict with deductions, new entities, contradictions.
@@ -115,11 +135,9 @@ class DeductionService:
             focus_filter,
         )
         system_prompt, user_prompt = self.prompt_engine.build_deduction_prompt(
-            project, focus_filter=focus_filter
+            project, focus_filter=focus_filter, ts_by_id=ts_by_id
         )
-        logger.debug(
-            "run_focused_deduction: prompt built (user_prompt_len={})", len(user_prompt)
-        )
+        logger.debug("run_focused_deduction: prompt built (user_prompt_len={})", len(user_prompt))
         try:
             raw = await self.llm.chat(system_prompt, user_prompt)
             result = _extract_json(raw)
@@ -132,13 +150,22 @@ class DeductionService:
             )
             return result
         except Exception:
-            logger.exception(
-                "run_focused_deduction: failed for project={!r}", project.name
-            )
+            logger.exception("run_focused_deduction: failed for project={!r}", project.name)
             raise
 
-    async def analyze_script(self, project: Project, script: Script) -> dict:
+    async def analyze_script(
+        self,
+        project: Project,
+        script: Script,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> dict:
         """Run a lightweight script analysis.
+
+        Args:
+            project: The project to run analysis on.
+            script: The script to analyze.
+            ts_by_id: Optional pre-built ts.id→TimeSlot map (e.g. from CacheManager).
+                Falls back to building from the project if not provided.
 
         Returns parsed response with characters, locations, time refs, direct facts.
         """
@@ -149,7 +176,7 @@ class DeductionService:
             len(script.raw_text),
         )
         system_prompt, user_prompt = self.prompt_engine.build_script_analysis_prompt(
-            project, script
+            project, script, ts_by_id=ts_by_id
         )
         logger.debug("analyze_script: prompt built (user_prompt_len={})", len(user_prompt))
         try:
@@ -164,9 +191,7 @@ class DeductionService:
             )
             return result
         except Exception:
-            logger.exception(
-                "analyze_script: failed for script={!r}", script.title or "Untitled"
-            )
+            logger.exception("analyze_script: failed for script={!r}", script.title or "Untitled")
             raise
 
     @staticmethod
@@ -235,8 +260,7 @@ class DeductionService:
         for loc in project.locations:
             for ts in project.time_slots:
                 if any(
-                    f.location_id == loc.id and _matches_ts(f.time_slot, ts)
-                    for f in project.facts
+                    f.location_id == loc.id and _matches_ts(f.time_slot, ts) for f in project.facts
                 ):
                     continue
 
@@ -278,7 +302,9 @@ class DeductionService:
                         new_deductions.append(ded)
                         logger.debug(
                             "run_cascade: strategy2 {} @ {} → {}",
-                            possible[0].name, ts.label, loc.name,
+                            possible[0].name,
+                            ts.label,
+                            loc.name,
                         )
 
         logger.info("run_cascade: found {} new certain deduction(s)", len(new_deductions))

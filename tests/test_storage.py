@@ -1,11 +1,12 @@
 """Tests for the JSON storage layer."""
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from src.models.puzzle import Project, Character, Location, Fact, SourceType
+import pytest
+
+from src.models.puzzle import Character, Fact, Location, SourceType
 from src.storage.json_store import JsonStore
 
 
