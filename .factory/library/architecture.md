@@ -89,7 +89,10 @@ Centralized index/lookup layer that replaces all ad-hoc maps:
 - Owns entity lookup maps (`char_by_id`, `loc_by_id`, `ts_by_id`, etc.)
 - Provides `rebuild(project)` to reconstruct all indexes from scratch
 - Provides targeted `invalidate_*()` methods for surgical updates after mutations
+- **Duplicate-name fallback**: When removing/updating the current by-name winner, CacheManager must scan remaining entities to find a fallback entity with the same lowercase name
 - Single source of truth for all O(1) lookups
+
+**Important**: `Script.metadata.characters_mentioned` stores character **names** (not IDs). Cascade cleanup for character removal must match by name, not by ID.
 
 ### JsonRepository
 
