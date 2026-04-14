@@ -1,0 +1,80 @@
+{
+  "milestone": "repo-migration",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "D:\\exp\\puzzle-solver\\.venv\\Scripts\\python -m pytest D:\\exp\\puzzle-solver\\tests -v --tb=short -x",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cmd /c \"echo no typecheck configured\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "D:\\exp\\puzzle-solver\\.venv\\Scripts\\ruff check D:\\exp\\puzzle-solver\\src D:\\exp\\puzzle-solver\\tests",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 1,
+    "failed": 3,
+    "failedFeatures": [
+      "ui-index-migration",
+      "cross-area-tests",
+      "e2e-web-verification"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "ui-index-migration",
+      "severity": "blocking",
+      "description": "prompt_engine still rebuilds time-slot lookup maps on live call paths because DeductionService does not pass centralized cache indexes, so the migration is incomplete relative to the feature scope."
+    },
+    {
+      "featureId": "ui-index-migration",
+      "severity": "blocking",
+      "description": "build_location_time_data() still constructs a local char_by_id dict instead of using centralized CacheManager/AppState indexes."
+    },
+    {
+      "featureId": "cross-area-tests",
+      "severity": "blocking",
+      "description": "test_cascade_delete_full_flow asserts that all rejections disappear after deleting one character, but character-removal cascade should only delete records referencing the removed character, so the test does not faithfully validate VAL-CROSS-002."
+    },
+    {
+      "featureId": "e2e-web-verification",
+      "severity": "blocking",
+      "description": "The verification evidence proves web startup and the initial project list render, but it does not verify opening an existing project and rendering the matrix view, leaving VAL-COMPAT-006 unproven."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill",
+      "suggestion": "Document that refactor-worker's mandatory TDD red phase may be skipped for pure delegation/refactor or verification-only features when the feature explicitly forbids new tests or code changes.",
+      "evidence": "Reviews for appstate-delegation, ui-index-migration, and e2e-web-verification all reported that the current refactor-worker workflow does not fit pure refactor/verification tasks and required recorded deviations.",
+      "isSystemic": true
+    },
+    {
+      "target": "library",
+      "suggestion": "Capture that AppState.cache is now the compatibility access point for centralized CacheManager indexes used across UI pages.",
+      "evidence": "appstate-delegation review noted that src/ui/state.py exposes a public cache property and matrix/manage/review/scripts consume app_state.cache, but this compatibility pattern is not explicitly recorded in shared knowledge.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Add a services.yaml note for Windows Flet startup via Start-Process.",
+      "reason": "The existing service definition already includes a Windows-specific start command for port 8080, and the review evidence was environment/tooling specific rather than a repo-wide operational requirement."
+    },
+    {
+      "observation": "Document agent-browser dependency recovery steps or CanvasKit automation limitations in shared repo state.",
+      "reason": "These observations are environment/tooling issues outside the repo's source-of-truth service and library needs for this milestone, so they should be handled by orchestrator/tool owners rather than applied here."
+    }
+  ],
+  "previousRound": null
+}

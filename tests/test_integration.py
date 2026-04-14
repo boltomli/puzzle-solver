@@ -116,13 +116,16 @@ class TestCross002CascadeDeleteIndexMatrix:
 
     def test_cascade_delete_full_flow(self, state: AppState, temp_data_dir: Path):
         """Remove character with fact/deduction/rejection → indexes clean → matrix
-        removes row → reload from disk identical."""
+        removes row → reload from disk identical.  Also verifies that records
+        belonging to char_b SURVIVE the cascade (selectivity check)."""
         state.create_project(name="CROSS-002")
         ts = state.add_time_slot("12:00")
         char_a = state.add_character(name="CharA")
-        state.add_character(name="CharB")
+        char_b = state.add_character(name="CharB")
         loc = state.add_location(name="Park")
+        loc2 = state.add_location(name="Garden")
 
+        # --- Records for CharA ---
         # Create fact for CharA
         state.add_fact(char_a.id, loc.id, ts.id, source_type=SourceType.user_input)
 
@@ -149,20 +152,67 @@ class TestCross002CascadeDeleteIndexMatrix:
         state.add_deduction(ded_rej)
         state.reject_deduction(ded_rej.id, reason="wrong")
 
-        # Verify indexes before delete
+        # --- Records for CharB (must survive cascade) ---
+        # Fact for CharB
+        state.add_fact(char_b.id, loc2.id, ts.id, source_type=SourceType.user_input)
+
+        # Pending deduction for CharB
+        ded_b = Deduction(
+            character_id=char_b.id,
+            location_id=loc2.id,
+            time_slot=ts2.id,
+            confidence=ConfidenceLevel.high,
+            reasoning="charB pending",
+        )
+        state.add_deduction(ded_b)
+
+        # Rejection for CharB
+        ded_b_rej = Deduction(
+            character_id=char_b.id,
+            location_id=loc2.id,
+            time_slot=ts3.id,
+            confidence=ConfidenceLevel.medium,
+            reasoning="charB rej",
+        )
+        state.add_deduction(ded_b_rej)
+        state.reject_deduction(ded_b_rej.id, reason="charB wrong")
+
+        # Verify indexes before delete — CharA
         assert (char_a.id, loc.id, ts.id) in state._fact_index
         assert (char_a.id, loc.id, ts2.id) in state._pending_index
         assert (char_a.id, loc.id, ts3.id) in state._rejection_index
+
+        # Verify indexes before delete — CharB
+        assert (char_b.id, loc2.id, ts.id) in state._fact_index
+        assert (char_b.id, loc2.id, ts2.id) in state._pending_index
+        assert (char_b.id, loc2.id, ts3.id) in state._rejection_index
 
         # Delete CharA
         removed = state.remove_character(char_a.id)
         assert removed is True
 
-        # Indexes cleaned
+        # CharA indexes cleaned
         assert (char_a.id, loc.id, ts.id) not in state._fact_index
         assert (char_a.id, loc.id, ts2.id) not in state._pending_index
         assert (char_a.id, loc.id, ts3.id) not in state._rejection_index
         assert char_a.id not in state.cache.char_by_id
+
+        # CharB records SURVIVE the cascade
+        assert (char_b.id, loc2.id, ts.id) in state._fact_index
+        assert (char_b.id, loc2.id, ts2.id) in state._pending_index
+        assert (char_b.id, loc2.id, ts3.id) in state._rejection_index
+        assert char_b.id in state.cache.char_by_id
+
+        # CharA's facts/deductions/rejections are gone
+        proj = state.current_project
+        assert not any(f.character_id == char_a.id for f in proj.facts)
+        assert not any(d.character_id == char_a.id for d in proj.deductions)
+        assert not any(r.character_id == char_a.id for r in proj.rejections)
+
+        # CharB's records remain
+        assert any(f.character_id == char_b.id for f in proj.facts)
+        assert any(d.character_id == char_b.id for d in proj.deductions)
+        assert any(r.character_id == char_b.id for r in proj.rejections)
 
         # Matrix has only CharB
         rows = build_matrix_data(state.current_project)
@@ -175,12 +225,22 @@ class TestCross002CascadeDeleteIndexMatrix:
         state2.load_project(proj_id)
         assert len(state2.current_project.characters) == 1
         assert state2.current_project.characters[0].name == "CharB"
-        assert len(state2.current_project.facts) == 0
-        # Dedup indexes rebuilt correctly
-        assert len(state2._fact_index) == 0
-        assert len(state2._pending_index) == 0
-        # Rejection for charA was cascade-deleted
-        assert len(state2.current_project.rejections) == 0
+
+        # CharB's records survived reload
+        assert len(state2.current_project.facts) == 1
+        assert state2.current_project.facts[0].character_id == char_b.id
+        assert len(state2.current_project.rejections) == 1
+        assert state2.current_project.rejections[0].character_id == char_b.id
+
+        # Dedup indexes rebuilt correctly — CharB's triples present
+        assert (char_b.id, loc2.id, ts.id) in state2._fact_index
+        assert (char_b.id, loc2.id, ts2.id) in state2._pending_index
+        assert (char_b.id, loc2.id, ts3.id) in state2._rejection_index
+
+        # CharA's triples absent
+        assert (char_a.id, loc.id, ts.id) not in state2._fact_index
+        assert (char_a.id, loc.id, ts2.id) not in state2._pending_index
+        assert (char_a.id, loc.id, ts3.id) not in state2._rejection_index
 
 
 # ---------------------------------------------------------------------------

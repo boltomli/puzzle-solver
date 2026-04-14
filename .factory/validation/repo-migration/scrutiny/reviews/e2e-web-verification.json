@@ -1,0 +1,43 @@
+{
+  "featureId": "e2e-web-verification",
+  "reviewedAt": "2026-04-14T16:00:00Z",
+  "commitId": "0c2543b8146a146b86009500c3225d6a3ffa67c0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The verification did prove that `python main.py --web` serves the initial Flet shell on port 8080, but it did not actually verify the required in-app flow of opening an existing project and rendering the matrix view. The reviewed commit contains no code changes because this was a verification-only feature; the failure is in incomplete verification evidence, not implementation code.",
+    "issues": [
+      {
+        "file": "D:\\exp\\puzzle-solver\\main.py",
+        "line": 35,
+        "severity": "blocking",
+        "description": "The feature required evidence that the web app could navigate to an existing project and render the matrix view, but the worker explicitly reported they could not complete those checks because the Flutter CanvasKit UI was not interactable via agent-browser. A screenshot of the project list is insufficient to validate the required behavior, so VAL-COMPAT-006 remains unproven."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The assigned `refactor-worker` skill is a poor fit for this verification-only browser task. Its mandatory TDD/implementation workflow does not match a manual web verification feature, and the worker had to record deviations for skipping TDD and implementation.",
+      "evidence": "Mission feature `e2e-web-verification` is verification-only in features.json; handoff.skillFeedback.deviations says TDD and implementation steps were skipped because no code changes were needed; `.factory/skills/refactor-worker/SKILL.md` centers on test-first code changes."
+    },
+    {
+      "area": "services",
+      "observation": "The worker needed to use PowerShell `Start-Process` to keep the Flet web server alive on Windows, while the direct background execution attempts failed. That Windows-specific startup pattern is not captured in services.yaml or mission guidance and should be documented for future web verification tasks.",
+      "evidence": "Transcript skeleton for session `0271e55c-cdfc-4cce-9a69-9e5ae9aee7a3` shows repeated failed background launches before succeeding with `Start-Process ... main.py --web`; `.factory/services.yaml` only documents `start /b .venv\\Scripts\\python main.py --web`."
+    },
+    {
+      "area": "services",
+      "observation": "agent-browser setup on this machine required dependency recovery outside the documented service/tooling setup, including pnpm/npm troubleshooting, yet no shared-state guidance captures that environment limitation.",
+      "evidence": "Handoff.discoveredIssues reports pre-existing `agent-browser` npm/webdriverio compatibility issues on Node v24.14.0/npm 11.12.1 and notes pnpm as a workaround; no corresponding note exists in mission AGENTS.md or `.factory/services.yaml`."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Flet web uses Flutter CanvasKit semantics that make standard DOM-based browser automation unreliable for validating internal navigation. This repo-specific testing constraint should be captured in shared knowledge so future validators plan an appropriate strategy (e.g. HTML renderer or coordinate-based fallback) up front.",
+      "evidence": "Handoff.whatWasLeftUndone says navigation and matrix checks could not be fully tested because Flet uses Flutter CanvasKit rendering; interactiveChecks only confirm the initial page screenshot and presence of `flt-semantics-host` / `flt-glass-pane`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the mission artifacts, worker transcript skeleton, handoff, skill/docs, and commit `0c2543b8146a146b86009500c3225d6a3ffa67c0`. The feature fails scrutiny because the required end-to-end evidence for opening an existing project and rendering the matrix view was not obtained; only the initial project list page and HTTP health checks were verified."
+}

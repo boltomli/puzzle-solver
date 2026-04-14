@@ -1187,7 +1187,7 @@ async def _run_script_analysis(
         from src.services.deduction import DeductionService
 
         service = DeductionService()
-        result = await service.analyze_script(proj, script)
+        result = await service.analyze_script(proj, script, ts_by_id=app_state.cache.ts_by_id)
 
         app_state.save_script_analysis(script_id, result)
         logger.info(

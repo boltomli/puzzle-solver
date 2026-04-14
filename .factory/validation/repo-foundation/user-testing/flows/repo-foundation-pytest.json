@@ -1,0 +1,327 @@
+﻿{
+    "surface":  "pytest",
+    "toolsUsed":  [
+                      "pytest",
+                      "Read",
+                      "Grep"
+                  ],
+    "assertionsTested":  [
+                             {
+                                 "id":  "VAL-REPO-001",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-002",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-003",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-004",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-005",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-006",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-007",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-008",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-009",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-010",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-011",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-012",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-013",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-014",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-015",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-REPO-016",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-001",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-002",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-003",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-004",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-005",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-006",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-IDX-007",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-001",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-002",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-003",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-004",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-005",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-006",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-007",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             },
+                             {
+                                 "id":  "VAL-CASCADE-008",
+                                 "status":  "pass",
+                                 "reason":  "Confirmed by existing passing pytest coverage mapped to this validation contract assertion.",
+                                 "evidence":  [
+                                                  "pytest: .venv\\\\Scripts\\\\python -m pytest tests\\\\test_json_repository.py tests\\\\test_cache_manager.py tests\\\\test_cascade.py tests\\\\test_matrix.py tests\\\\test_e2e.py -v",
+                                                  "result: 317 passed in 3.78s, exit code 0",
+                                                  "coverage sources: tests/test_json_repository.py, tests/test_cache_manager.py, tests/test_cascade.py, tests/test_matrix.py, tests/test_e2e.py"
+                                              ]
+                             }
+                         ],
+    "frictions":  [
+
+                  ],
+    "blockers":  [
+
+                 ],
+    "summary":  "Validated 31 assigned repo-foundation assertions via mapped pytest coverage and a focused read-only pytest run. Command passed with 317/317 tests green (exit code 0), confirming repository CRUD, index consistency, cascade integrity, matrix/location-time behavior, and end-to-end deduction flows."
+}

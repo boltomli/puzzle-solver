@@ -116,13 +116,21 @@ def build_matrix_data(project: Project) -> list[dict]:
     return rows
 
 
-def build_location_time_data(project: Project) -> list[dict]:
+def build_location_time_data(
+    project: Project,
+    char_by_id: dict[str, str] | None = None,
+) -> list[dict]:
     """Build the location × time table data from a project.
 
     Each row represents a location. Columns are: location name + one per time slot.
     For each cell, stores the display value (character names) and a status suffix.
 
     This is a standalone testable function (not tied to UI).
+
+    Args:
+        project: The project to build data from.
+        char_by_id: Optional pre-built char_id→name map (e.g. from CacheManager).
+            Falls back to building from the project if not provided.
 
     Returns:
         List of row dicts with keys:
@@ -134,8 +142,9 @@ def build_location_time_data(project: Project) -> list[dict]:
     if not project.locations:
         return []
 
-    # Build character name lookup once (outside the loop)
-    char_by_id = {c.id: c.name for c in project.characters}
+    # Build character name lookup once (outside the loop), or use provided map
+    if char_by_id is None:
+        char_by_id = {c.id: c.name for c in project.characters}
 
     rows = []
     for loc in project.locations:
@@ -315,7 +324,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
                 service = DeductionService()
                 show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
-                result = await service.run_deduction(proj)
+                result = await service.run_deduction(proj, ts_by_id=app_state.cache.ts_by_id)
                 deductions_data = result.get("deductions", [])
                 contradictions = result.get("contradictions_detected", [])
 
@@ -601,7 +610,9 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 service = DeductionService()
                 logger.info("run_focused_deduction: calling API with filter={}", focus_filter)
                 show_snackbar("🎯 正在进行自定义推断...", ft.Colors.BLUE)
-                result = await service.run_focused_deduction(proj, focus_filter)
+                result = await service.run_focused_deduction(
+                    proj, focus_filter, ts_by_id=app_state.cache.ts_by_id
+                )
                 deductions_data = result.get("deductions", [])
                 logger.info(
                     "run_focused_deduction: AI returned {} deductions, {} new_chars, {} new_locs",
@@ -963,7 +974,10 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     controls.append(ft.Divider())
     controls.append(ft.Text("地点 × 时间矩阵", size=18, weight=ft.FontWeight.BOLD))
 
-    loc_rows = build_location_time_data(proj)
+    loc_rows = build_location_time_data(
+        proj,
+        char_by_id={cid: c.name for cid, c in app_state.cache.char_by_id.items()},
+    )
     if not loc_rows:
         controls.append(ft.Text("暂无地点数据", color=ft.Colors.GREY, size=14))
     else:

@@ -1,0 +1,22 @@
+{
+  "featureId": "cross-area-tests",
+  "reviewedAt": "2026-04-14T16:00:00Z",
+  "commitId": "0c2543b8146a146b86009500c3225d6a3ffa67c0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The new integration suite covers most requested flows, but one test encodes an incorrect expectation for character-removal cascade cleanup and therefore does not fully validate the required persistence behavior.",
+    "issues": [
+      {
+        "file": "tests/test_integration.py",
+        "line": 164,
+        "severity": "blocking",
+        "description": "test_cascade_delete_full_flow asserts that the reloaded project has zero rejections after deleting char_a, but the setup also creates char_b and an unrelated rejection should remain if it does not reference the removed character. Character-removal cascade is scoped to dependent records only, so this expectation is stronger than the repository contract and does not faithfully verify VAL-CROSS-002."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, transcript skeleton, and commit diff for cross-area-tests. The feature is close, but the cascade-delete integration test has a blocking correctness issue because it expects all rejections to disappear after removing one character rather than verifying only dependent records are removed."
+}
