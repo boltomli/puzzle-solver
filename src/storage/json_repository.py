@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import datetime
 
 from loguru import logger
@@ -52,6 +53,41 @@ class JsonRepository:
             self._cache.rebuild(self.current_project)
         else:
             self._cache = CacheManager()
+
+    def _cascade_delete_referencing_records(
+        self,
+        match_fn: Callable[[Fact | Deduction | Rejection], bool],
+    ) -> None:
+        """Remove all facts, deductions, and rejections that match the predicate.
+
+        Also updates the 3 dedup indexes (fact_index, pending_index,
+        rejection_index) to remove stale triples, and cleans the
+        rejection_map for any removed rejections.
+        """
+        proj = self._require_project()
+
+        # Cascade facts
+        removed_facts = [f for f in proj.facts if match_fn(f)]
+        if removed_facts:
+            proj.facts = [f for f in proj.facts if not match_fn(f)]
+            for fact in removed_facts:
+                self._cache.invalidate_fact("remove", fact)
+
+        # Cascade deductions (all statuses: pending, accepted, rejected)
+        removed_deductions = [d for d in proj.deductions if match_fn(d)]
+        if removed_deductions:
+            proj.deductions = [d for d in proj.deductions if not match_fn(d)]
+            for ded in removed_deductions:
+                triple = (ded.character_id, ded.location_id, ded.time_slot)
+                if ded.status == DeductionStatus.pending:
+                    self._cache.pending_index.discard(triple)
+
+        # Cascade rejections
+        removed_rejections = [r for r in proj.rejections if match_fn(r)]
+        if removed_rejections:
+            proj.rejections = [r for r in proj.rejections if not match_fn(r)]
+            for rej in removed_rejections:
+                self._cache.invalidate_rejection("remove", rej)
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -154,15 +190,37 @@ class JsonRepository:
         return None
 
     def remove_character(self, character_id: str) -> bool:
-        """Remove a character by ID. Returns True if found and removed."""
+        """Remove a character by ID with cascade delete.
+
+        Cascades: deletes all Facts, Deductions, and Rejections referencing
+        this character_id. Also removes the character's name from every
+        Script.metadata.characters_mentioned list.
+        """
         proj = self._require_project()
-        for char in proj.characters:
-            if char.id == character_id:
-                proj.characters = [c for c in proj.characters if c.id != character_id]
-                self._cache.invalidate_character("remove", char)
-                self.save()
-                return True
-        return False
+        char = next((c for c in proj.characters if c.id == character_id), None)
+        if char is None:
+            return False
+
+        char_name = char.name
+
+        # Remove the character entity
+        proj.characters = [c for c in proj.characters if c.id != character_id]
+        self._cache.invalidate_character("remove", char)
+
+        # Cascade: remove referencing facts, deductions, rejections
+        self._cascade_delete_referencing_records(
+            lambda r: r.character_id == character_id,
+        )
+
+        # Cascade: clean Script.metadata.characters_mentioned
+        for script in proj.scripts:
+            if char_name in script.metadata.characters_mentioned:
+                script.metadata.characters_mentioned = [
+                    n for n in script.metadata.characters_mentioned if n != char_name
+                ]
+
+        self.save()
+        return True
 
     # ------------------------------------------------------------------
     # Location management
@@ -211,15 +269,26 @@ class JsonRepository:
         return None
 
     def remove_location(self, location_id: str) -> bool:
-        """Remove a location by ID. Returns True if found and removed."""
+        """Remove a location by ID with cascade delete.
+
+        Cascades: deletes all Facts, Deductions, and Rejections referencing
+        this location_id.
+        """
         proj = self._require_project()
-        for loc in proj.locations:
-            if loc.id == location_id:
-                proj.locations = [lo for lo in proj.locations if lo.id != location_id]
-                self._cache.invalidate_location("remove", loc)
-                self.save()
-                return True
-        return False
+        loc = next((lo for lo in proj.locations if lo.id == location_id), None)
+        if loc is None:
+            return False
+
+        proj.locations = [lo for lo in proj.locations if lo.id != location_id]
+        self._cache.invalidate_location("remove", loc)
+
+        # Cascade: remove referencing facts, deductions, rejections
+        self._cascade_delete_referencing_records(
+            lambda r: r.location_id == location_id,
+        )
+
+        self.save()
+        return True
 
     # ------------------------------------------------------------------
     # Script management
@@ -279,11 +348,28 @@ class JsonRepository:
         return False
 
     def remove_script(self, script_id: str) -> bool:
-        """Remove a script by ID. Returns True if found and removed."""
+        """Remove a script by ID with cascade cleanup.
+
+        Cascades: removes this script's ID from every Fact.source_script_ids
+        and every Deduction.supporting_script_ids. The facts and deductions
+        themselves are NOT deleted.
+        """
         proj = self._require_project()
         original_len = len(proj.scripts)
         proj.scripts = [s for s in proj.scripts if s.id != script_id]
         if len(proj.scripts) < original_len:
+            # Cascade: clean script ID from fact source_script_ids
+            for fact in proj.facts:
+                if script_id in fact.source_script_ids:
+                    fact.source_script_ids = [
+                        sid for sid in fact.source_script_ids if sid != script_id
+                    ]
+            # Cascade: clean script ID from deduction supporting_script_ids
+            for ded in proj.deductions:
+                if script_id in ded.supporting_script_ids:
+                    ded.supporting_script_ids = [
+                        sid for sid in ded.supporting_script_ids if sid != script_id
+                    ]
             self.save()
             return True
         return False
@@ -349,15 +435,26 @@ class JsonRepository:
         return new_ts
 
     def remove_time_slot(self, time_slot_id: str) -> bool:
-        """Remove a time slot by ID. Returns True if found and removed."""
+        """Remove a time slot by ID with cascade delete.
+
+        Cascades: deletes all Facts, Deductions, and Rejections referencing
+        this time_slot ID.
+        """
         proj = self._require_project()
-        for ts in proj.time_slots:
-            if ts.id == time_slot_id:
-                proj.time_slots = [t for t in proj.time_slots if t.id != time_slot_id]
-                self._cache.invalidate_time_slot("remove", ts)
-                self.save()
-                return True
-        return False
+        ts = next((t for t in proj.time_slots if t.id == time_slot_id), None)
+        if ts is None:
+            return False
+
+        proj.time_slots = [t for t in proj.time_slots if t.id != time_slot_id]
+        self._cache.invalidate_time_slot("remove", ts)
+
+        # Cascade: remove referencing facts, deductions, rejections
+        self._cascade_delete_referencing_records(
+            lambda r: r.time_slot == time_slot_id,
+        )
+
+        self.save()
+        return True
 
     def reorder_time_slot(self, time_slot_id: str, direction: int) -> bool:
         """Move a time slot up (direction=-1) or down (direction=1) in sort order."""
