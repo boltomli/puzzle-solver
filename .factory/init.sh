@@ -1,6 +1,20 @@
 #!/bin/bash
-# Mission init script — install dependencies
+# Environment setup for puzzle-solver Repository Abstraction mission
+# Idempotent — safe to run multiple times
+
 cd D:\exp\puzzle-solver
-echo "Mission initialized. Working directory: D:\exp\puzzle-solver"
-echo "Python: .venv\Scripts\python"
-echo "Run tests: .venv\Scripts\python -m pytest tests/ -v"
+
+# Ensure dependencies are installed
+if [ -f ".venv/Scripts/python" ]; then
+    .venv/Scripts/python -m pip install -e . --quiet 2>/dev/null || true
+elif [ -f ".venv/bin/python" ]; then
+    .venv/bin/python -m pip install -e . --quiet 2>/dev/null || true
+fi
+
+# Verify baseline tests pass
+echo "Verifying baseline tests..."
+if [ -f ".venv/Scripts/python" ]; then
+    .venv/Scripts/python -m pytest tests/ -q --tb=line 2>&1 | tail -3
+elif [ -f ".venv/bin/python" ]; then
+    .venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -3
+fi

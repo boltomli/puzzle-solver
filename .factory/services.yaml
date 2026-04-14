@@ -1,1 +1,14 @@
-services: []
+commands:
+  install: cd D:\exp\puzzle-solver && .venv\Scripts\python -m pip install -e .
+  test: cd D:\exp\puzzle-solver && .venv\Scripts\python -m pytest tests/ -v --tb=short -x
+  test_quick: cd D:\exp\puzzle-solver && .venv\Scripts\python -m pytest tests/ -q
+  lint: cd D:\exp\puzzle-solver && .venv\Scripts\ruff check src/ tests/
+  typecheck: echo "no typecheck configured"
+
+services:
+  flet-web:
+    start: cd D:\exp\puzzle-solver && start /b .venv\Scripts\python main.py --web
+    stop: for /f "tokens=5" %a in ('netstat -aon ^| findstr :8080 ^| findstr LISTENING') do taskkill /f /pid %a
+    healthcheck: curl -sf http://localhost:8080
+    port: 8080
+    depends_on: []
