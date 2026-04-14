@@ -24,6 +24,7 @@ from src.models.puzzle import (
     Script,
     ScriptMetadata,
     SourceType,
+    TimeSlot,
 )
 from src.storage.json_store import JsonStore
 
@@ -34,12 +35,32 @@ class AppState:
     def __init__(self, store: JsonStore | None = None):
         self.store = store or JsonStore()
         self.current_project: Optional[Project] = None
+        # Deduplication indexes: O(1) lookup for (character_id, location_id, time_slot) triples
+        self._fact_index: set[tuple[str, str, str]] = set()
+        self._pending_index: set[tuple[str, str, str]] = set()
+        self._rejection_index: set[tuple[str, str, str]] = set()
+
+    def _rebuild_indexes(self) -> None:
+        """Rebuild all three deduplication indexes from current project data."""
+        self._fact_index = set()
+        self._pending_index = set()
+        self._rejection_index = set()
+        if not self.current_project:
+            return
+        for f in self.current_project.facts:
+            self._fact_index.add((f.character_id, f.location_id, f.time_slot))
+        for d in self.current_project.deductions:
+            if d.status == DeductionStatus.pending:
+                self._pending_index.add((d.character_id, d.location_id, d.time_slot))
+        for r in self.current_project.rejections:
+            self._rejection_index.add((r.character_id, r.location_id, r.time_slot))
 
     # --- Project management ---
 
     def load_project(self, project_id: str) -> None:
         """Load a project by ID and set it as the current project."""
         self.current_project = self.store.load_project(project_id)
+        self._rebuild_indexes()
         logger.info("AppState.load_project: loaded {!r} (id={})", self.current_project.name, project_id)
 
     def save(self) -> None:
@@ -61,6 +82,7 @@ class AppState:
             time_slots=time_slots or [],
         )
         self.current_project = project
+        self._rebuild_indexes()
         logger.info("AppState.create_project: created {!r} (id={})", name, project.id)
         return project
 
@@ -307,6 +329,7 @@ class AppState:
             source_script_ids=source_script_ids or [],
         )
         self.current_project.facts.append(fact)
+        self._fact_index.add((character_id, location_id, time_slot))
         self.save()
         logger.info(
             "AppState.add_fact: char={!r} loc={!r} ts={!r} source={}",
@@ -318,45 +341,102 @@ class AppState:
         """Remove a fact by ID. Returns True if found and removed."""
         if not self.current_project:
             raise ValueError("No project loaded")
-        original_len = len(self.current_project.facts)
+        removed_fact = None
+        for f in self.current_project.facts:
+            if f.id == fact_id:
+                removed_fact = f
+                break
+        if removed_fact is None:
+            logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
+            return False
         self.current_project.facts = [
             f for f in self.current_project.facts if f.id != fact_id
         ]
-        if len(self.current_project.facts) < original_len:
-            self.save()
-            logger.info("AppState.remove_fact: removed id={!r}", fact_id)
-            return True
-        logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
-        return False
+        self._fact_index.discard(
+            (removed_fact.character_id, removed_fact.location_id, removed_fact.time_slot)
+        )
+        self.save()
+        logger.info("AppState.remove_fact: removed id={!r}", fact_id)
+        return True
 
     # --- Time slot management ---
 
-    def add_time_slot(self, time_slot: str) -> bool:
-        """Add a time slot. Validates HH:MM format. Returns True if added."""
+    def add_time_slot(self, time_slot: str, description: str = "") -> TimeSlot | None:
+        """Add a time slot. Validates HH:MM format. Returns TimeSlot if added, None if duplicate."""
         if not self.current_project:
             raise ValueError("No project loaded")
         if not re.match(r"^\d{2}:\d{2}$", time_slot):
             raise ValueError(f"时间格式必须为 HH:MM，收到: '{time_slot}'")
-        if time_slot in self.current_project.time_slots:
-            logger.debug("AppState.add_time_slot: {!r} already exists, skipped", time_slot)
-            return False
-        self.current_project.time_slots.append(time_slot)
-        self.current_project.time_slots.sort()
+        # Check for duplicate: same label AND same description
+        for ts in self.current_project.time_slots:
+            if ts.label == time_slot and ts.description == description:
+                logger.debug("AppState.add_time_slot: {!r} (desc={!r}) already exists, skipped", time_slot, description)
+                return None
+        # Determine next sort_order
+        max_order = max((ts.sort_order for ts in self.current_project.time_slots), default=-1)
+        new_ts = TimeSlot(label=time_slot, description=description, sort_order=max_order + 1)
+        self.current_project.time_slots.append(new_ts)
+        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
         self.save()
-        logger.info("AppState.add_time_slot: added {!r}", time_slot)
-        return True
+        logger.info("AppState.add_time_slot: added {!r} (id={}, desc={!r})", time_slot, new_ts.id, description)
+        return new_ts
 
-    def remove_time_slot(self, time_slot: str) -> bool:
-        """Remove a time slot. Returns True if found and removed."""
+    def remove_time_slot(self, time_slot_id: str) -> bool:
+        """Remove a time slot by ID. Returns True if found and removed."""
         if not self.current_project:
             raise ValueError("No project loaded")
-        if time_slot in self.current_project.time_slots:
-            self.current_project.time_slots.remove(time_slot)
+        original_len = len(self.current_project.time_slots)
+        self.current_project.time_slots = [
+            ts for ts in self.current_project.time_slots if ts.id != time_slot_id
+        ]
+        if len(self.current_project.time_slots) < original_len:
             self.save()
-            logger.info("AppState.remove_time_slot: removed {!r}", time_slot)
+            logger.info("AppState.remove_time_slot: removed id={!r}", time_slot_id)
             return True
-        logger.warning("AppState.remove_time_slot: {!r} not found", time_slot)
+        logger.warning("AppState.remove_time_slot: id={!r} not found", time_slot_id)
         return False
+
+    def reorder_time_slot(self, time_slot_id: str, direction: int) -> bool:
+        """Move a time slot up (direction=-1) or down (direction=1) in sort order.
+
+        Returns True if the time slot was moved, False otherwise.
+        """
+        if not self.current_project:
+            raise ValueError("No project loaded")
+        slots = sorted(self.current_project.time_slots, key=lambda ts: ts.sort_order)
+        idx = next((i for i, ts in enumerate(slots) if ts.id == time_slot_id), None)
+        if idx is None:
+            logger.warning("AppState.reorder_time_slot: id={!r} not found", time_slot_id)
+            return False
+        swap_idx = idx + direction
+        if swap_idx < 0 or swap_idx >= len(slots):
+            logger.debug("AppState.reorder_time_slot: id={!r} already at boundary", time_slot_id)
+            return False
+        # Swap sort_order values
+        slots[idx].sort_order, slots[swap_idx].sort_order = slots[swap_idx].sort_order, slots[idx].sort_order
+        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
+        self.save()
+        logger.info("AppState.reorder_time_slot: moved id={!r} direction={}", time_slot_id, direction)
+        return True
+
+    def get_time_slot_by_id(self, ts_id: str) -> TimeSlot | None:
+        """Look up a time slot by ID. Returns None if not found."""
+        if not self.current_project:
+            return None
+        return next((ts for ts in self.current_project.time_slots if ts.id == ts_id), None)
+
+    def get_time_slot_label(self, ts_id: str) -> str:
+        """Return display label for a time slot ID.
+
+        Returns 'label (description)' if description is non-empty,
+        otherwise just 'label'. Falls back to raw ID if not found.
+        """
+        ts = self.get_time_slot_by_id(ts_id)
+        if ts is None:
+            return ts_id
+        if ts.description:
+            return f"{ts.label} ({ts.description})"
+        return ts.label
 
     # --- Hint management ---
 
@@ -391,18 +471,34 @@ class AppState:
 
     # --- Deduction management ---
 
-    def add_deduction(self, deduction: Deduction) -> Deduction:
-        """Add a pending deduction to the current project."""
+    def add_deduction(self, deduction: Deduction) -> bool:
+        """Add a pending deduction to the current project.
+
+        Checks if the (character_id, location_id, time_slot) triple already exists
+        as a confirmed Fact, pending Deduction, or Rejection. If so, silently skips.
+
+        Returns:
+            True if the deduction was added, False if it was skipped as a duplicate.
+        """
         if not self.current_project:
             raise ValueError("No project loaded")
+        triple = (deduction.character_id, deduction.location_id, deduction.time_slot)
+        # Check all three indexes for duplicates
+        if triple in self._fact_index or triple in self._pending_index or triple in self._rejection_index:
+            logger.debug(
+                "AppState.add_deduction: skipping duplicate char={!r} loc={!r} ts={!r}",
+                deduction.character_id, deduction.location_id, deduction.time_slot,
+            )
+            return False
         self.current_project.deductions.append(deduction)
+        self._pending_index.add(triple)
         self.save()
         logger.debug(
             "AppState.add_deduction: char={!r} loc={!r} ts={!r} conf={}",
             deduction.character_id, deduction.location_id,
             deduction.time_slot, deduction.confidence,
         )
-        return deduction
+        return True
 
     def accept_deduction(self, deduction_id: str) -> Fact | None:
         """Accept a deduction: create a Fact from it, mark it accepted."""
@@ -427,6 +523,10 @@ class AppState:
             from_deduction_id=ded.id,
         )
         self.current_project.facts.append(fact)
+        # Update indexes: remove from pending, add to fact
+        triple = (ded.character_id, ded.location_id, ded.time_slot)
+        self._pending_index.discard(triple)
+        self._fact_index.add(triple)
         self.save()
         logger.info(
             "AppState.accept_deduction: id={!r} → fact char={!r} loc={!r} ts={!r}",
@@ -455,6 +555,10 @@ class AppState:
             from_deduction_id=ded.id,
         )
         self.current_project.rejections.append(rejection)
+        # Update indexes: remove from pending, add to rejection
+        triple = (ded.character_id, ded.location_id, ded.time_slot)
+        self._pending_index.discard(triple)
+        self._rejection_index.add(triple)
         self.save()
         logger.info(
             "AppState.reject_deduction: id={!r} reason={!r:.60}",
@@ -482,6 +586,7 @@ class AppState:
         ]
         removed = original_len - len(self.current_project.deductions)
         if removed > 0:
+            self._pending_index.clear()
             self.save()
             logger.info("AppState.clear_pending_deductions: removed {}", removed)
         return removed

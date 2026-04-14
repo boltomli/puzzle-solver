@@ -112,23 +112,35 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     """Time slot management panel."""
     proj = app_state.current_project
-    slots = sorted(proj.time_slots) if proj else []
+    slots = sorted(proj.time_slots, key=lambda ts: ts.sort_order) if proj else []
 
     ts_input = ft.TextField(
-        label="新增时间段",
+        label="时间",
         hint_text="HH:MM，例如 14:00",
+        width=160,
+        dense=True,
+    )
+    desc_input = ft.TextField(
+        label="描述（可选）",
+        hint_text="例如 第一天",
         width=200,
         dense=True,
     )
 
     def on_remove_slot(ts):
-        logger.info("manage: remove_time_slot {!r}", ts)
-        app_state.remove_time_slot(ts)
-        show_snackbar(f"已删除时间段 {ts}", ft.Colors.GREEN)
+        chip_text = f"{ts.label}({ts.description})" if ts.description else ts.label
+        logger.info("manage: remove_time_slot id={!r} label={!r}", ts.id, ts.label)
+        app_state.remove_time_slot(ts.id)
+        show_snackbar(f"已删除时间段 {chip_text}", ft.Colors.GREEN)
+        refresh()
+
+    def on_reorder_slot(ts, direction):
+        app_state.reorder_time_slot(ts.id, direction)
         refresh()
 
     def on_add_slot(e):
         val = ts_input.value.strip()
+        desc = desc_input.value.strip() if desc_input.value else ""
         if not val:
             show_snackbar("请输入时间", ft.Colors.AMBER)
             return
@@ -136,14 +148,15 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             show_snackbar("格式错误，请使用 HH:MM 格式", ft.Colors.RED)
             return
         try:
-            added = app_state.add_time_slot(val)
+            added = app_state.add_time_slot(val, description=desc)
         except ValueError as exc:
             show_snackbar(str(exc), ft.Colors.RED)
             return
         if added:
-            logger.info("manage: add_time_slot {!r}", val)
+            logger.info("manage: add_time_slot {!r} desc={!r}", val, desc)
             show_snackbar(f"已添加时间段 {val}", ft.Colors.GREEN)
             ts_input.value = ""
+            desc_input.value = ""
             refresh()
         else:
             show_snackbar(f"时间段 {val} 已存在", ft.Colors.AMBER)
@@ -154,18 +167,31 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         chip_controls.append(ft.Text("暂无时间段，请添加", color=ft.Colors.GREY, size=13))
     else:
         for ts in slots:
+            chip_text = f"{ts.label}({ts.description})" if ts.description else ts.label
+
             def make_delete_handler(slot=ts):
                 return lambda e: on_remove_slot(slot)
 
+            def make_up_handler(slot=ts):
+                return lambda e: on_reorder_slot(slot, -1)
+
+            def make_down_handler(slot=ts):
+                return lambda e: on_reorder_slot(slot, 1)
+
             chip_controls.append(
-                ft.Chip(
-                    label=ft.Text(ts),
-                    delete_icon_color=ft.Colors.RED,
-                    on_delete=make_delete_handler(ts),
-                )
+                ft.Row(controls=[
+                    ft.Chip(
+                        label=ft.Text(chip_text),
+                        delete_icon_color=ft.Colors.RED,
+                        on_delete=make_delete_handler(ts),
+                    ),
+                    ft.IconButton(icon=ft.Icons.ARROW_UPWARD, on_click=make_up_handler(ts), icon_size=16, tooltip="上移"),
+                    ft.IconButton(icon=ft.Icons.ARROW_DOWNWARD, on_click=make_down_handler(ts), icon_size=16, tooltip="下移"),
+                ], spacing=0)
             )
 
     return ft.ExpansionPanel(
+        expanded=True,
         header=ft.ListTile(title=ft.Text("🕐 时间管理")),
         content=ft.Container(
             content=ft.Column(
@@ -175,6 +201,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ft.Row(
                         controls=[
                             ts_input,
+                            desc_input,
                             ft.ElevatedButton("添加", icon=ft.Icons.ADD, on_click=on_add_slot),
                         ],
                         spacing=10,
@@ -385,6 +412,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
+                width=320,
             )
             char_controls.append(card)
 
@@ -392,10 +420,20 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         ft.ElevatedButton("添加人物", icon=ft.Icons.PERSON_ADD, on_click=on_add_character),
     )
 
+    # Separate add button from cards for layout
+    card_items = [c for c in char_controls if isinstance(c, ft.Card)]
+    non_card_items = [c for c in char_controls if not isinstance(c, ft.Card)]
+
+    content_controls: list[ft.Control] = []
+    if card_items:
+        content_controls.append(ft.Row(controls=card_items, wrap=True, spacing=8, run_spacing=8))
+    content_controls.extend(non_card_items)
+
     return ft.ExpansionPanel(
+        expanded=True,
         header=ft.ListTile(title=ft.Text("👤 人物管理")),
         content=ft.Container(
-            content=ft.Column(controls=char_controls, spacing=8),
+            content=ft.Column(controls=content_controls, spacing=8),
             padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
@@ -558,6 +596,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                     ),
                     padding=15,
                 ),
+                width=320,
             )
             loc_controls.append(card)
 
@@ -565,10 +604,20 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         ft.ElevatedButton("添加地点", icon=ft.Icons.ADD_LOCATION, on_click=on_add_location),
     )
 
+    # Separate add button from cards for layout
+    loc_card_items = [c for c in loc_controls if isinstance(c, ft.Card)]
+    loc_non_card_items = [c for c in loc_controls if not isinstance(c, ft.Card)]
+
+    loc_content_controls: list[ft.Control] = []
+    if loc_card_items:
+        loc_content_controls.append(ft.Row(controls=loc_card_items, wrap=True, spacing=8, run_spacing=8))
+    loc_content_controls.extend(loc_non_card_items)
+
     return ft.ExpansionPanel(
+        expanded=True,
         header=ft.ListTile(title=ft.Text("📍 地点管理")),
         content=ft.Container(
-            content=ft.Column(controls=loc_controls, spacing=8),
+            content=ft.Column(controls=loc_content_controls, spacing=8),
             padding=ft.Padding.only(left=15, right=15, bottom=15),
         ),
     )
@@ -697,6 +746,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     )
 
     return ft.ExpansionPanel(
+        expanded=True,
         header=ft.ListTile(title=ft.Text("📋 游戏规则")),
         content=ft.Container(
             content=ft.Column(controls=hint_controls, spacing=8),
@@ -723,7 +773,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     proj = app_state.current_project
     chars = proj.characters if proj else []
     locs = proj.locations if proj else []
-    slots = sorted(proj.time_slots) if proj else []
+    slots = sorted(proj.time_slots, key=lambda ts: ts.sort_order) if proj else []
     facts = proj.facts if proj else []
 
     form_controls: list[ft.Control] = []
@@ -745,8 +795,14 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         )
         slot_dropdown = ft.Dropdown(
             label="时间段 *",
-            options=[ft.dropdown.Option(key=s, text=s) for s in slots],
-            width=140,
+            options=[
+                ft.dropdown.Option(
+                    key=ts.id,
+                    text=f"{ts.label}({ts.description})" if ts.description else ts.label,
+                )
+                for ts in slots
+            ],
+            width=180,
         )
         evidence_field = ft.TextField(
             label="证据/备注",
@@ -763,6 +819,16 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 return
             if not slot_dropdown.value:
                 show_snackbar("请选择时间段", ft.Colors.AMBER)
+                return
+            # Check for duplicate
+            existing = any(
+                f.character_id == char_dropdown.value
+                and f.location_id == loc_dropdown.value
+                and f.time_slot == slot_dropdown.value
+                for f in proj.facts
+            )
+            if existing:
+                show_snackbar("该事实已存在，无需重复添加", ft.Colors.AMBER)
                 return
             logger.info(
                 "manage: add_fact char={!r} loc={!r} ts={!r}",
@@ -841,8 +907,13 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
                 return handler
 
+            ts_obj = app_state.get_time_slot_by_id(f.time_slot)
+            ts_display = (
+                (f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label)
+                if ts_obj else f.time_slot
+            )
             time_badge = ft.Container(
-                content=ft.Text(f.time_slot, size=11, color=ft.Colors.WHITE),
+                content=ft.Text(ts_display, size=11, color=ft.Colors.WHITE),
                 bgcolor=ft.Colors.BLUE,
                 border_radius=10,
                 padding=ft.Padding.symmetric(horizontal=8, vertical=3),

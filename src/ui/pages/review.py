@@ -121,13 +121,39 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
     else:
         controls.append(ft.Text(f"共 {len(pending)} 条待审查推断", size=16))
 
-        def clear_all(e):
-            count = app_state.clear_pending_deductions()
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"已清除 {count} 条待审查推断")
+        def on_clear_all_click(e):
+            def do_clear(e):
+                count = app_state.clear_pending_deductions()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"已清除 {count} 条待审查推断")
+                )
+                page.snack_bar.open = True
+                dlg.open = False
+                page.update()
+                refresh()
+
+            def do_cancel(e):
+                dlg.open = False
+                page.update()
+
+            dlg = ft.AlertDialog(
+                title=ft.Text("确认清除"),
+                content=ft.Text(
+                    f"确定要清除所有 {len(pending)} 条待审查推断吗？此操作不可撤销。"
+                ),
+                actions=[
+                    ft.TextButton("取消", on_click=do_cancel),
+                    ft.ElevatedButton(
+                        "确认清除",
+                        bgcolor=ft.Colors.RED,
+                        color=ft.Colors.WHITE,
+                        on_click=do_clear,
+                    ),
+                ],
             )
-            page.snack_bar.open = True
-            refresh()
+            page.overlay.append(dlg)
+            dlg.open = True
+            page.update()
 
         controls.append(
             ft.Row(
@@ -136,7 +162,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                         "清除所有待审查",
                         icon=ft.Icons.CLEAR_ALL,
                         style=ft.ButtonStyle(color=ft.Colors.RED),
-                        on_click=clear_all,
+                        on_click=on_clear_all_click,
                     ),
                 ],
             )
@@ -146,6 +172,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
         for ded in pending:
             char_name = char_map.get(ded.character_id, ded.character_id[:8])
             loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+            ts_label = app_state.get_time_slot_label(ded.time_slot)
             conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
             conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
 
@@ -188,7 +215,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                     ft.Column(
                         controls=[
                             ft.Text("时间", size=12, color=ft.Colors.GREY),
-                            ft.Text(ded.time_slot, size=16, weight=ft.FontWeight.BOLD),
+                            ft.Text(ts_label, size=16, weight=ft.FontWeight.BOLD),
                         ],
                         spacing=2,
                     ),
@@ -216,29 +243,30 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                             new_deds = DeductionService.run_cascade(proj)
                             count = 0
                             for new_ded in new_deds:
-                                already = any(
-                                    d.character_id == new_ded.character_id
-                                    and d.location_id == new_ded.location_id
-                                    and d.time_slot == new_ded.time_slot
-                                    and d.status == DeductionStatus.pending
-                                    for d in proj.deductions
-                                )
-                                if not already:
-                                    app_state.add_deduction(new_ded)
+                                if app_state.add_deduction(new_ded):
                                     count += 1
                             page.snack_bar = ft.SnackBar(
                                 ft.Text(f"已接受推断。消元发现 {count} 条新推断")
                             )
                             page.snack_bar.open = True
-                        except Exception:
-                            page.snack_bar = ft.SnackBar(ft.Text("已接受推断"))
+                        except Exception as exc:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"已接受推断，但消元推断出错: {exc}"),
+                                bgcolor=ft.Colors.AMBER,
+                            )
                             page.snack_bar.open = True
+                    else:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("操作失败：推断未找到"),
+                            bgcolor=ft.Colors.RED,
+                        )
+                        page.snack_bar.open = True
                     refresh()
                 return handler
 
-            def make_reject_handler(ded_id, d_char, d_loc, d_ts):
+            def make_reject_handler(ded_id, d_char, d_loc, d_ts_label):
                 def handler(e):
-                    _show_reject_dialog(page, ded_id, d_char, d_loc, d_ts, refresh)
+                    _show_reject_dialog(page, ded_id, d_char, d_loc, d_ts_label, refresh)
                 return handler
 
             action_row = ft.Row(
@@ -253,7 +281,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                         "❌ 拒绝",
                         style=ft.ButtonStyle(color=ft.Colors.RED),
                         on_click=make_reject_handler(
-                            ded.id, char_name, loc_name, ded.time_slot
+                            ded.id, char_name, loc_name, ts_label
                         ),
                     ),
                 ],
@@ -315,6 +343,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
     for ded in resolved:
         char_name = char_map.get(ded.character_id, ded.character_id[:8])
         loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+        ts_label = app_state.get_time_slot_label(ded.time_slot)
         conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
         conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
 
@@ -386,7 +415,7 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
                     controls=[
                         ft.Text("时间", size=12, color=ft.Colors.GREY),
                         ft.Text(
-                            ded.time_slot,
+                            ts_label,
                             size=14,
                             weight=ft.FontWeight.BOLD,
                         ),
@@ -466,6 +495,12 @@ def _show_reject_dialog(page, deduction_id, char_name, loc_name, time_slot, refr
         rejection = app_state.reject_deduction(deduction_id, reason)
         if rejection:
             page.snack_bar = ft.SnackBar(ft.Text("推断已拒绝"))
+            page.snack_bar.open = True
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("操作失败：推断未找到"),
+                bgcolor=ft.Colors.RED,
+            )
             page.snack_bar.open = True
         dlg.open = False
         page.update()

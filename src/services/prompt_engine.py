@@ -4,8 +4,13 @@ Uses templates defined in the architecture doc to build structured prompts
 that include all project context: characters, locations, facts, rejections, scripts.
 """
 
-from src.models.puzzle import Project, Script
+from src.models.puzzle import Project, Script, TimeSlot
 from src.services.config import load_config
+
+
+def _format_ts(ts: TimeSlot) -> str:
+    """Format a TimeSlot for human-readable display in prompts."""
+    return f"{ts.label}({ts.description})" if ts.description else ts.label
 
 
 class PromptEngine:
@@ -22,6 +27,7 @@ class PromptEngine:
         "PROBABLE deductions (most likely but not proven).\n"
         "- Never suggest a deduction that appears in the REJECTED list — those have been "
         "explicitly ruled out.\n"
+        "- 严格禁止重复已确认的事实或已被拒绝的推断。只输出全新的、未知的推断。\n"
         "- Pay close attention to GAME RULES — they define hard constraints.\n"
         "- Scripts may describe events OUT OF CHRONOLOGICAL ORDER. Use internal clues "
         "(dialogue references, time mentions, lighting, etc.) to determine actual timing.\n"
@@ -43,8 +49,21 @@ class PromptEngine:
         "Respond with a JSON object following the exact schema provided in the user message."
     )
 
-    def build_deduction_prompt(self, project: Project) -> tuple[str, str]:
+    def build_deduction_prompt(
+        self,
+        project: Project,
+        focus_filter: dict | None = None,
+    ) -> tuple[str, str]:
         """Build system + user prompt for a full deduction pass.
+
+        Args:
+            project: The project to build the prompt for.
+            focus_filter: Optional dict with optional keys:
+                - ``character_ids``: list of character IDs to focus on
+                - ``location_ids``: list of location IDs to focus on
+                - ``time_slots``: list of time slots to focus on
+                When provided, the UNFILLED SLOTS section only lists matching cells
+                and a FOCUS AREA section is added to guide the AI.
 
         Returns:
             (system_prompt, user_prompt) tuple.
@@ -55,7 +74,7 @@ class PromptEngine:
         if not system_prompt.strip():
             system_prompt = self.DEFAULT_SYSTEM_PROMPT
 
-        user_prompt = self._build_user_prompt(project)
+        user_prompt = self._build_user_prompt(project, focus_filter=focus_filter)
         return system_prompt, user_prompt
 
     def build_script_analysis_prompt(self, project: Project, script: Script) -> tuple[str, str]:
@@ -72,7 +91,7 @@ class PromptEngine:
         user_prompt = self._build_script_analysis_user_prompt(project, script)
         return system_prompt, user_prompt
 
-    def _build_user_prompt(self, project: Project) -> str:
+    def _build_user_prompt(self, project: Project, focus_filter: dict | None = None) -> str:
         """Assemble the full deduction user prompt."""
         parts: list[str] = []
 
@@ -82,7 +101,7 @@ class PromptEngine:
             parts.append(project.description)
 
         # Time slots
-        parts.append(f"\n## TIME SLOTS\n{', '.join(project.time_slots)}")
+        parts.append(f"\n## TIME SLOTS\n{', '.join(_format_ts(ts) for ts in project.time_slots)}")
 
         # Characters
         parts.append("\n## CHARACTERS")
@@ -107,6 +126,9 @@ class PromptEngine:
         for hint in project.hints:
             parts.append(f"- [{hint.type.value.upper()}] {hint.content}")
 
+        # Build ts_map for ID→TimeSlot lookup
+        ts_map = {ts.id: ts for ts in project.time_slots}
+
         # Confirmed facts
         parts.append("\n## CONFIRMED FACTS")
         for fact in project.facts:
@@ -114,28 +136,81 @@ class PromptEngine:
             loc = next((l for l in project.locations if l.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
-            parts.append(f"- ✅ **{char_name}** was at **{loc_name}** at **{fact.time_slot}**")
+            ts = ts_map.get(fact.time_slot)
+            ts_label = _format_ts(ts) if ts else fact.time_slot
+            parts.append(f"- ✅ **{char_name}** was at **{loc_name}** at **{ts_label}**")
 
         # Rejections
-        parts.append("\n## REJECTED DEDUCTIONS (do NOT re-suggest)")
+        parts.append("\n## REJECTED DEDUCTIONS (以下推断已被用户明确拒绝，绝对不要再次建议：)")
         for rej in project.rejections:
             char = next((c for c in project.characters if c.id == rej.character_id), None)
             loc = next((l for l in project.locations if l.id == rej.location_id), None)
             char_name = char.name if char else rej.character_id
             loc_name = loc.name if loc else rej.location_id
+            ts = ts_map.get(rej.time_slot)
+            ts_label = _format_ts(ts) if ts else rej.time_slot
             parts.append(
-                f"- ❌ {char_name} was NOT at {loc_name} at {rej.time_slot} (reason: {rej.reason})"
+                f"- ❌ {char_name} was NOT at {loc_name} at {ts_label} (reason: {rej.reason})"
             )
 
-        # Unfilled slots
-        parts.append("\n## UNFILLED SLOTS")
+        # Focus area section (when focus_filter is provided)
+        if focus_filter:
+            focus_lines: list[str] = []
+            filter_char_ids: list[str] = focus_filter.get("character_ids") or []
+            filter_loc_ids: list[str] = focus_filter.get("location_ids") or []
+            filter_time_slots: list[str] = focus_filter.get("time_slots") or []
+
+            if filter_char_ids:
+                char_names = [
+                    c.name for c in project.characters if c.id in filter_char_ids
+                ]
+                if char_names:
+                    focus_lines.append(f"- 人物: {', '.join(char_names)}")
+            if filter_loc_ids:
+                loc_names = [
+                    l.name for l in project.locations if l.id in filter_loc_ids
+                ]
+                if loc_names:
+                    focus_lines.append(f"- 地点: {', '.join(loc_names)}")
+            if filter_time_slots:
+                # Build reverse lookup: label→TimeSlot for back-compat
+                label_map = {ts.label: ts for ts in project.time_slots}
+                ts_labels = []
+                for tid in filter_time_slots:
+                    if tid in ts_map:
+                        ts_labels.append(_format_ts(ts_map[tid]))
+                    elif tid in label_map:
+                        ts_labels.append(_format_ts(label_map[tid]))
+                focus_lines.append(f"- 时间: {', '.join(ts_labels)}")
+
+            if focus_lines:
+                parts.append("\n## 重点推断范围")
+                parts.append("请重点推断以下维度的组合：")
+                parts.extend(focus_lines)
+
+        # Unfilled slots (filtered when focus_filter is provided)
+        parts.append("\n## UNFILLED SLOTS TO DEDUCE")
+
+        filter_char_ids_set: set[str] = set(
+            (focus_filter or {}).get("character_ids") or []
+        )
+        filter_time_slots_set: set[str] = set(
+            (focus_filter or {}).get("time_slots") or []
+        )
+
         for char in project.characters:
+            # Skip character if focus filter specifies characters and this one is not in it
+            if filter_char_ids_set and char.id not in filter_char_ids_set:
+                continue
             for ts in project.time_slots:
+                # Skip time slot if focus filter specifies time slots and this one is not in it
+                if filter_time_slots_set and ts.id not in filter_time_slots_set and ts.label not in filter_time_slots_set:
+                    continue
                 has_fact = any(
-                    f.character_id == char.id and f.time_slot == ts for f in project.facts
+                    f.character_id == char.id and f.time_slot in (ts.id, ts.label) for f in project.facts
                 )
                 if not has_fact:
-                    parts.append(f"- {char.name} at {ts}: ???")
+                    parts.append(f"- {char.name} at {_format_ts(ts)}: ???")
 
         # Scripts
         parts.append("\n## SCRIPT EVIDENCE")
@@ -148,6 +223,9 @@ class PromptEngine:
                 parts.append(f"Stated time: {script.metadata.stated_time}")
             if script.metadata.stated_location:
                 parts.append(f"Stated location: {script.metadata.stated_location}")
+            notes_text = script.metadata.user_notes or script.title or ""
+            if notes_text:
+                parts.append(f"Notes: {notes_text}")
             parts.append(f"\n```\n{script.raw_text}\n```")
 
         # Task instruction
@@ -161,7 +239,7 @@ class PromptEngine:
             '    {\n'
             '      "character_id": "<uuid>",\n'
             '      "location_id": "<uuid>",\n'
-            '      "time_slot": "HH:MM",\n'
+            '      "time_slot": "time slot label",\n'
             '      "confidence": "certain|high|medium|low",\n'
             '      "reasoning": "Step-by-step explanation",\n'
             '      "supporting_script_ids": ["<uuid>"],\n'
@@ -209,16 +287,19 @@ class PromptEngine:
             parts.append(line)
 
         # Known time slots
-        parts.append(f"\n### Known Time Slots\n{', '.join(project.time_slots)}")
+        parts.append(f"\n### Known Time Slots\n{', '.join(_format_ts(ts) for ts in project.time_slots)}")
 
         # Confirmed facts
+        ts_map = {ts.id: ts for ts in project.time_slots}
         parts.append("\n### Confirmed Facts")
         for fact in project.facts:
             char = next((c for c in project.characters if c.id == fact.character_id), None)
             loc = next((l for l in project.locations if l.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
-            parts.append(f"- {char_name} was at {loc_name} at {fact.time_slot}")
+            ts = ts_map.get(fact.time_slot)
+            ts_label = _format_ts(ts) if ts else fact.time_slot
+            parts.append(f"- {char_name} was at {loc_name} at {ts_label}")
 
         # Game rules & hints
         parts.append("\n### Game Rules & Hints")
@@ -234,10 +315,18 @@ class PromptEngine:
                     f'\n#### Script: "{other.title or "Untitled"}" '
                     f"(#{other.metadata.source_order or '?'})"
                 )
+                notes_text = other.metadata.user_notes or other.title or ""
+                if notes_text:
+                    parts.append(f"Notes: {notes_text}")
                 parts.append(f"```\n{other.raw_text}\n```")
 
         # New script text
-        parts.append(f"\n### New Script Text\n```\n{script.raw_text}\n```")
+        notes_text = script.metadata.user_notes or script.title or ""
+        if notes_text:
+            parts.append(f"\n### New Script Text\nNotes: {notes_text}")
+        else:
+            parts.append("\n### New Script Text")
+        parts.append(f"```\n{script.raw_text}\n```")
 
         # Response format
         parts.append('\nAnalyze this script and respond with ONLY this JSON:')
@@ -262,7 +351,7 @@ class PromptEngine:
             '  ],\n'
             '  "time_references": [\n'
             '    {\n'
-            '      "time_slot": "HH:MM or null",\n'
+            '      "time_slot": "time slot label or null",\n'
             '      "reference_text": "The text that indicates this time",\n'
             '      "is_explicit": true\n'
             '    }\n'
@@ -271,7 +360,7 @@ class PromptEngine:
             '    {\n'
             '      "character_name": "string",\n'
             '      "location_name": "string",\n'
-            '      "time_slot": "HH:MM",\n'
+            '      "time_slot": "time slot label",\n'
             '      "confidence": "certain|high|medium|low",\n'
             '      "evidence": "Quote or explanation from the script"\n'
             '    }\n'

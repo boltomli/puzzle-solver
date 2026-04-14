@@ -29,6 +29,7 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     """Convert a single direct_fact from analysis into a pending Deduction.
 
     Maps character_name and location_name back to IDs from the project.
+    Maps time_slot label back to a TimeSlot ID.
     Returns True if the deduction was successfully created.
     """
     char_name = fact_dict.get("character_name", "")
@@ -37,8 +38,8 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     confidence_str = fact_dict.get("confidence", "medium")
     evidence = fact_dict.get("evidence", "")
 
-    char = next((c for c in proj.characters if c.name == char_name), None)
-    loc = next((l for l in proj.locations if l.name == loc_name), None)
+    char = next((c for c in proj.characters if c.name.lower() == char_name.lower()), None)
+    loc = next((l for l in proj.locations if l.name.lower() == loc_name.lower()), None)
 
     if not char or not loc:
         logger.warning(
@@ -46,8 +47,19 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
             char_name, char is not None, loc_name, loc is not None, ts,
         )
         return False
-    if not ts or not re.match(r"^\d{2}:\d{2}$", ts):
-        logger.warning("_create_single_deduction: invalid time_slot={!r}", ts)
+
+    # Build label → ID mapping for time slots
+    ts_label_map: dict[str, str] = {}
+    for ts_obj in proj.time_slots:
+        key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+        ts_label_map[key] = ts_obj.id
+        # Also map bare label for backward compat
+        if ts_obj.label not in ts_label_map:
+            ts_label_map[ts_obj.label] = ts_obj.id
+
+    ts_id = ts_label_map.get(ts)
+    if not ts_id:
+        logger.warning("_create_single_deduction: unknown time_slot label={!r}", ts)
         return False
 
     try:
@@ -58,18 +70,24 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
     deduction = Deduction(
         character_id=char.id,
         location_id=loc.id,
-        time_slot=ts,
+        time_slot=ts_id,
         confidence=conf,
         reasoning=evidence or f"剧本分析：{char_name} 在 {ts} 位于 {loc_name}",
         supporting_script_ids=[script_id],
         status=DeductionStatus.pending,
     )
-    app_state.add_deduction(deduction)
-    logger.info(
-        "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
-        char_name, loc_name, ts, conf,
-    )
-    return True
+    added = app_state.add_deduction(deduction)
+    if added:
+        logger.info(
+            "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
+            char_name, loc_name, ts, conf,
+        )
+    else:
+        logger.debug(
+            "_create_single_deduction: skipped duplicate char={!r} loc={!r} ts={!r}",
+            char_name, loc_name, ts,
+        )
+    return added
 
 
 def _create_deductions_from_facts(
@@ -78,8 +96,18 @@ def _create_deductions_from_facts(
     """Convert direct_facts from analysis into pending Deduction objects.
 
     Maps character_name and location_name back to IDs from the project.
+    Maps time_slot labels back to TimeSlot IDs.
     Returns the number of deductions successfully created.
     """
+    # Build label → ID mapping for time slots
+    ts_label_map: dict[str, str] = {}
+    for ts_obj in proj.time_slots:
+        key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+        ts_label_map[key] = ts_obj.id
+        # Also map bare label for backward compat
+        if ts_obj.label not in ts_label_map:
+            ts_label_map[ts_obj.label] = ts_obj.id
+
     created = 0
     for df in direct_facts:
         char_name = df.get("character_name", "")
@@ -90,17 +118,18 @@ def _create_deductions_from_facts(
 
         # Map names to IDs
         char = next(
-            (c for c in proj.characters if c.name == char_name), None
+            (c for c in proj.characters if c.name.lower() == char_name.lower()), None
         )
         loc = next(
-            (l for l in proj.locations if l.name == loc_name), None
+            (l for l in proj.locations if l.name.lower() == loc_name.lower()), None
         )
 
         # Skip if we can't resolve both character and location
         if not char or not loc:
             continue
-        # Skip if time_slot is not valid
-        if not ts or not re.match(r"^\d{2}:\d{2}$", ts):
+        # Map time_slot label to ID
+        ts_id = ts_label_map.get(ts)
+        if not ts_id:
             continue
 
         # Map confidence string to enum
@@ -112,14 +141,14 @@ def _create_deductions_from_facts(
         deduction = Deduction(
             character_id=char.id,
             location_id=loc.id,
-            time_slot=ts,
+            time_slot=ts_id,
             confidence=conf,
             reasoning=evidence or f"剧本分析：{char_name} 在 {ts} 位于 {loc_name}",
             supporting_script_ids=[script_id],
             status=DeductionStatus.pending,
         )
-        app_state.add_deduction(deduction)
-        created += 1
+        if app_state.add_deduction(deduction):
+            created += 1
 
     return created
 
@@ -195,6 +224,46 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             )
         )
 
+    # --- Unanalyzed scripts banner ---
+    unanalyzed = [s for s in proj.scripts if s.analysis_result is None]
+    if unanalyzed and _is_api_configured():
+        unanalyzed_names = [s.title or f"剧本 #{s.metadata.source_order or '?'}" for s in unanalyzed]
+
+        async def auto_analyze_all(e):
+            analyze_btn.disabled = True
+            analyze_btn.text = "正在分析..."
+            page.update()
+            for s in unanalyzed:
+                await _run_script_analysis(page, s.id, refresh, show_snackbar)
+            refresh()
+
+        analyze_btn = ft.ElevatedButton(
+            f"🤖 自动分析 {len(unanalyzed)} 个剧本",
+            on_click=auto_analyze_all,
+        )
+
+        controls.append(
+            ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE),
+                        ft.Column([
+                            ft.Text(
+                                f"有 {len(unanalyzed)} 个剧本尚未分析：{', '.join(unanalyzed_names)}",
+                                size=14,
+                            ),
+                            analyze_btn,
+                        ], spacing=6, expand=True),
+                    ],
+                    spacing=10,
+                ),
+                border=ft.Border.all(1, ft.Colors.BLUE_200),
+                border_radius=8,
+                padding=12,
+                margin=ft.Margin.only(bottom=10),
+            )
+        )
+
     # --- Add Script Form ---
     title_field = ft.TextField(
         label="标题（可选）",
@@ -217,14 +286,6 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             show_snackbar("请输入剧本文本", ft.Colors.AMBER)
             return
 
-        # Check if project is empty before saving (for auto-trigger)
-        project_is_empty = (
-            proj is not None
-            and not proj.characters
-            and not proj.locations
-            and not proj.time_slots
-        )
-
         script = app_state.add_script(
             raw_text=text,
             title=(title_field.value or "").strip() or None,
@@ -238,15 +299,14 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         show_snackbar("剧本已保存", ft.Colors.GREEN)
         refresh()
 
-        # Auto-trigger script analysis on empty project
-        if project_is_empty:
-            if _is_api_configured():
-                await _run_script_analysis(page, script.id, refresh, show_snackbar)
-            else:
-                show_snackbar(
-                    "请先在设置页面配置 API，以启用自动剧本分析",
-                    ft.Colors.BLUE,
-                )
+        # Auto-trigger script analysis
+        if _is_api_configured():
+            await _run_script_analysis(page, script.id, refresh, show_snackbar)
+        else:
+            show_snackbar(
+                "剧本已保存。配置 API 后可自动分析剧本。",
+                ft.Colors.BLUE,
+            )
 
     controls.append(
         ft.Card(
@@ -463,7 +523,7 @@ def _show_analysis_results_dialog(
 
     new_chars = [ch for ch in chars_mentioned if ch.get("is_new", False)]
     new_locs = [lo for lo in locs_mentioned if lo.get("is_new", False)]
-    existing_time_slots = set(proj.time_slots) if proj else set()
+    existing_time_slots = {ts.label for ts in proj.time_slots} if proj else set()
     new_time_refs = [
         tr
         for tr in time_refs
@@ -477,6 +537,12 @@ def _show_analysis_results_dialog(
     # --- "全部添加实体" button ---
     has_new_entities = new_chars or new_locs or new_time_refs
     if has_new_entities:
+
+        add_all_entities_btn = ft.ElevatedButton(
+            "全部添加实体",
+            icon=ft.Icons.PLAYLIST_ADD,
+            tooltip="仅添加新发现的人物、地点和时间段，不包含推断事实",
+        )
 
         def add_all_entities(e):
             added_count = 0
@@ -496,22 +562,20 @@ def _show_analysis_results_dialog(
                         added_count += 1
             for tr in new_time_refs:
                 ts = tr.get("time_slot", "")
-                if ts and ts not in proj.time_slots:
+                existing_labels = {t.label for t in proj.time_slots}
+                if ts and ts not in existing_labels:
                     try:
                         app_state.add_time_slot(ts)
                         added_count += 1
                     except ValueError:
                         pass
             show_snackbar(f"已批量添加 {added_count} 个实体（人物/地点/时间段）", ft.Colors.GREEN)
+            add_all_entities_btn.disabled = True
+            add_all_entities_btn.text = "已添加"
+            page.update()
 
-        content_controls.append(
-            ft.ElevatedButton(
-                "全部添加实体",
-                icon=ft.Icons.PLAYLIST_ADD,
-                on_click=add_all_entities,
-                tooltip="仅添加新发现的人物、地点和时间段，不包含推断事实",
-            )
-        )
+        add_all_entities_btn.on_click = add_all_entities
+        content_controls.append(add_all_entities_btn)
 
     # --- Characters ---
     if chars_mentioned:
@@ -542,20 +606,22 @@ def _show_analysis_results_dialog(
             right_controls: list[ft.Control] = []
             if is_new:
 
-                def make_add_char(ch_name):
+                def make_add_char(ch_name, btn_ref):
                     def handler(e):
                         app_state.add_character(name=ch_name)
                         show_snackbar(f"已添加人物「{ch_name}」", ft.Colors.GREEN)
+                        btn_ref.disabled = True
+                        btn_ref.text = "已添加"
+                        page.update()
 
                     return handler
 
-                right_controls.append(
-                    ft.OutlinedButton(
-                        "添加",
-                        icon=ft.Icons.PERSON_ADD,
-                        on_click=make_add_char(name),
-                    )
+                add_char_btn = ft.OutlinedButton(
+                    "添加",
+                    icon=ft.Icons.PERSON_ADD,
                 )
+                add_char_btn.on_click = make_add_char(name, add_char_btn)
+                right_controls.append(add_char_btn)
 
             content_controls.append(
                 ft.Row(
@@ -597,20 +663,22 @@ def _show_analysis_results_dialog(
             right_controls: list[ft.Control] = []
             if is_new:
 
-                def make_add_loc(lo_name):
+                def make_add_loc(lo_name, btn_ref):
                     def handler(e):
                         app_state.add_location(name=lo_name)
                         show_snackbar(f"已添加地点「{lo_name}」", ft.Colors.GREEN)
+                        btn_ref.disabled = True
+                        btn_ref.text = "已添加"
+                        page.update()
 
                     return handler
 
-                right_controls.append(
-                    ft.OutlinedButton(
-                        "添加",
-                        icon=ft.Icons.ADD_LOCATION,
-                        on_click=make_add_loc(name),
-                    )
+                add_loc_btn = ft.OutlinedButton(
+                    "添加",
+                    icon=ft.Icons.ADD_LOCATION,
                 )
+                add_loc_btn.on_click = make_add_loc(name, add_loc_btn)
+                right_controls.append(add_loc_btn)
 
             content_controls.append(
                 ft.Row(
@@ -672,23 +740,25 @@ def _show_analysis_results_dialog(
             right_controls: list[ft.Control] = []
             if is_new_ts:
 
-                def make_add_time(time_slot):
+                def make_add_time(time_slot, btn_ref):
                     def handler(e):
                         try:
                             app_state.add_time_slot(time_slot)
                             show_snackbar(f"已添加时间段「{time_slot}」", ft.Colors.GREEN)
+                            btn_ref.disabled = True
+                            btn_ref.text = "已添加"
                         except ValueError as exc:
                             show_snackbar(str(exc), ft.Colors.AMBER)
+                        page.update()
 
                     return handler
 
-                right_controls.append(
-                    ft.OutlinedButton(
-                        "添加",
-                        icon=ft.Icons.MORE_TIME,
-                        on_click=make_add_time(ts),
-                    )
+                add_time_btn = ft.OutlinedButton(
+                    "添加",
+                    icon=ft.Icons.MORE_TIME,
                 )
+                add_time_btn.on_click = make_add_time(ts, add_time_btn)
+                right_controls.append(add_time_btn)
 
             content_controls.append(
                 ft.Row(
@@ -715,20 +785,25 @@ def _show_analysis_results_dialog(
             )
         )
 
+        add_all_facts_btn = ft.ElevatedButton(
+            "全部添加到审查队列",
+            icon=ft.Icons.PLAYLIST_ADD_CHECK,
+        )
+
         def add_all_facts_handler(e):
             created = _create_deductions_from_facts(proj, direct_facts, script_id)
             if created > 0:
                 show_snackbar(f"已将 {created} 条推断加入审查队列", ft.Colors.GREEN)
+            elif len(direct_facts) == 0:
+                show_snackbar("没有可添加的推断", ft.Colors.AMBER)
             else:
-                show_snackbar("没有可添加的推断（请先添加对应的人物和地点）", ft.Colors.AMBER)
+                show_snackbar("所有推断均已存在或实体未匹配，无新增内容", ft.Colors.AMBER)
+            add_all_facts_btn.disabled = True
+            add_all_facts_btn.text = "已添加"
+            page.update()
 
-        content_controls.append(
-            ft.ElevatedButton(
-                "全部添加到审查队列",
-                icon=ft.Icons.PLAYLIST_ADD_CHECK,
-                on_click=add_all_facts_handler,
-            )
-        )
+        add_all_facts_btn.on_click = add_all_facts_handler
+        content_controls.append(add_all_facts_btn)
 
         content_controls.append(
             ft.Text(
@@ -746,17 +821,20 @@ def _show_analysis_results_dialog(
             evidence = df.get("evidence", "")
 
             # Check if character and location can be resolved
-            char = next((c for c in proj.characters if c.name == char_n), None)
-            loc = next((loc_obj for loc_obj in proj.locations if loc_obj.name == loc_n), None)
+            char = next((c for c in proj.characters if c.name.lower() == char_n.lower()), None)
+            loc = next((loc_obj for loc_obj in proj.locations if loc_obj.name.lower() == loc_n.lower()), None)
             can_resolve = char is not None and loc is not None
 
-            def make_add_single_fact(fact_dict):
+            def make_add_single_fact(fact_dict, btn_ref):
                 def handler(e):
                     success = _create_single_deduction(proj, fact_dict, script_id)
                     if success:
                         show_snackbar("已添加到审查队列", ft.Colors.GREEN)
+                        btn_ref.disabled = True
+                        btn_ref.text = "已添加"
                     else:
                         show_snackbar("无法添加：请先添加对应的人物和地点", ft.Colors.AMBER)
+                    page.update()
 
                 return handler
 
@@ -782,17 +860,20 @@ def _show_analysis_results_dialog(
                 )
             )
 
+            add_fact_btn = ft.OutlinedButton(
+                "添加到审查",
+                icon=ft.Icons.ADD_TASK,
+                disabled=not can_resolve,
+                tooltip=None if can_resolve else "请先添加对应的人物和地点",
+            )
+            if can_resolve:
+                add_fact_btn.on_click = make_add_single_fact(df, add_fact_btn)
+
             fact_card_controls: list[ft.Control] = [
                 ft.Row(
                     controls=[
                         ft.Row(controls=fact_row_controls, spacing=8),
-                        ft.OutlinedButton(
-                            "添加到审查",
-                            icon=ft.Icons.ADD_TASK,
-                            on_click=make_add_single_fact(df) if can_resolve else None,
-                            disabled=not can_resolve,
-                            tooltip=None if can_resolve else "请先添加对应的人物和地点",
-                        ),
+                        add_fact_btn,
                     ],
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 ),

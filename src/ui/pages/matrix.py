@@ -27,6 +27,43 @@ def _is_api_configured() -> bool:
     return bool(config.get("api_base_url") and config.get("model"))
 
 
+def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Check for unanalyzed scripts and entities not yet added from analyzed scripts.
+
+    Returns (missing_chars, missing_locs, missing_times, unanalyzed_script_titles)
+    """
+    unanalyzed: list[str] = []
+    for script in proj.scripts:
+        if script.analysis_result is None:
+            unanalyzed.append(script.title or f"剧本 #{script.metadata.source_order or '?'}")
+
+    existing_chars = {c.name.lower() for c in proj.characters}
+    existing_locs = {l.name.lower() for l in proj.locations}
+    existing_times = {ts.label for ts in proj.time_slots}
+
+    missing_chars: set[str] = set()
+    missing_locs: set[str] = set()
+    missing_times: set[str] = set()
+
+    for script in proj.scripts:
+        if not script.analysis_result:
+            continue
+        for ch in script.analysis_result.get("characters_mentioned", []):
+            name = ch.get("name", "").strip()
+            if name and name.lower() not in existing_chars:
+                missing_chars.add(name)
+        for lo in script.analysis_result.get("locations_mentioned", []):
+            name = lo.get("name", "").strip()
+            if name and name.lower() not in existing_locs:
+                missing_locs.add(name)
+        for tr in script.analysis_result.get("time_references", []):
+            ts = tr.get("time_slot", "").strip()
+            if ts and ts not in existing_times:
+                missing_times.add(ts)
+
+    return sorted(missing_chars), sorted(missing_locs), sorted(missing_times), unanalyzed
+
+
 def build_matrix_data(project: Project) -> list[dict]:
     """Build the matrix table data from a project.
 
@@ -51,7 +88,7 @@ def build_matrix_data(project: Project) -> list[dict]:
                 (
                     f
                     for f in project.facts
-                    if f.character_id == char.id and f.time_slot == ts
+                    if f.character_id == char.id and f.time_slot == ts.id
                 ),
                 None,
             )
@@ -61,7 +98,7 @@ def build_matrix_data(project: Project) -> list[dict]:
                     d
                     for d in project.deductions
                     if d.character_id == char.id
-                    and d.time_slot == ts
+                    and d.time_slot == ts.id
                     and d.status == DeductionStatus.pending
                 ),
                 None,
@@ -71,18 +108,91 @@ def build_matrix_data(project: Project) -> list[dict]:
                 loc = next(
                     (l for l in project.locations if l.id == fact.location_id), None
                 )
-                row[ts] = loc.name if loc else "?"
-                row[f"{ts}_status"] = "confirmed"
+                row[ts.id] = loc.name if loc else "?"
+                row[f"{ts.id}_status"] = "confirmed"
             elif deduction:
                 loc = next(
                     (l for l in project.locations if l.id == deduction.location_id),
                     None,
                 )
-                row[ts] = f"({loc.name})" if loc else "(?)"
-                row[f"{ts}_status"] = "pending"
+                row[ts.id] = f"({loc.name})" if loc else "(?)"
+                row[f"{ts.id}_status"] = "pending"
             else:
-                row[ts] = ""
-                row[f"{ts}_status"] = "unknown"
+                row[ts.id] = ""
+                row[f"{ts.id}_status"] = "unknown"
+        rows.append(row)
+    return rows
+
+
+def build_location_time_data(project: Project) -> list[dict]:
+    """Build the location × time table data from a project.
+
+    Each row represents a location. Columns are: location name + one per time slot.
+    For each cell, stores the display value (character names) and a status suffix.
+
+    This is a standalone testable function (not tied to UI).
+
+    Returns:
+        List of row dicts with keys:
+        - 'id': location id
+        - 'location': location name
+        - '{time_slot}': display string (character names, confirmed first, pending in parens)
+        - '{time_slot}_status': 'confirmed' | 'pending' | 'unknown'
+    """
+    if not project.locations:
+        return []
+
+    rows = []
+    for loc in project.locations:
+        row: dict = {"id": loc.id, "location": loc.name}
+        for ts in project.time_slots:
+            # Find all confirmed facts for this (location, time_slot)
+            confirmed_char_ids = list(dict.fromkeys(
+                f.character_id
+                for f in project.facts
+                if f.location_id == loc.id and f.time_slot == ts.id
+            ))
+            # Find all pending deductions for this (location, time_slot)
+            pending_char_ids = list(dict.fromkeys(
+                d.character_id
+                for d in project.deductions
+                if d.location_id == loc.id
+                and d.time_slot == ts.id
+                and d.status == DeductionStatus.pending
+            ))
+
+            # Build character name lookup
+            char_by_id = {c.id: c.name for c in project.characters}
+
+            # Get confirmed character names
+            confirmed_names = [
+                char_by_id[cid] for cid in confirmed_char_ids if cid in char_by_id
+            ]
+            # Get pending character names (not already confirmed at this cell)
+            confirmed_set = set(confirmed_char_ids)
+            pending_names = [
+                char_by_id[cid]
+                for cid in pending_char_ids
+                if cid in char_by_id and cid not in confirmed_set
+            ]
+
+            # Combine display: confirmed names first, then pending in parentheses
+            parts: list[str] = list(confirmed_names)
+            if pending_names:
+                parts.append(f"({', '.join(pending_names)})")
+
+            display = ", ".join(parts)
+
+            # Determine status
+            if confirmed_names:
+                status = "confirmed"
+            elif pending_names:
+                status = "pending"
+            else:
+                status = "unknown"
+
+            row[ts.id] = display
+            row[f"{ts.id}_status"] = status
         rows.append(row)
     return rows
 
@@ -187,118 +297,183 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         return ft.Column(controls=controls, spacing=12)
 
     # --- Action buttons ---
+    from loguru import logger
     api_ok = _is_api_configured()
+    logger.info("matrix._build_content: api_ok={}", api_ok)
 
     async def run_ai_deduction(e):
         """Trigger a full AI deduction pass."""
-        progress = ft.ProgressRing(width=24, height=24)
-        controls.insert(0, progress)
-        page.update()
-        try:
-            from src.services.deduction import DeductionService
-            from loguru import logger
+        # Pre-check for unprocessed entities from script analysis
+        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(proj)
 
-            service = DeductionService()
-            show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
-            result = await service.run_deduction(proj)
-            deductions_data = result.get("deductions", [])
-            contradictions = result.get("contradictions_detected", [])
-
-            # Build lookup maps for validation
-            char_by_id = {c.id: c for c in proj.characters}
-            loc_by_id = {l.id: l for l in proj.locations}
-            char_by_name = {c.name.lower(): c for c in proj.characters}
-            loc_by_name = {l.name.lower(): l for l in proj.locations}
-
-            count = 0
-            # Collect unresolvable raw names/ids for the "add entities" dialog
-            unknown_char_names: dict[str, str] = {}  # raw_id -> display name
-            unknown_loc_names: dict[str, str] = {}
-
-            for d_data in deductions_data:
-                raw_char_id = d_data.get("character_id", "")
-                raw_loc_id = d_data.get("location_id", "")
-
-                char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
-                loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
-
-                if not char_obj:
-                    unknown_char_names[raw_char_id] = raw_char_id
-                if not loc_obj:
-                    unknown_loc_names[raw_loc_id] = raw_loc_id
-
-                if not char_obj or not loc_obj:
-                    logger.warning(
-                        "run_ai_deduction: skipping unresolvable deduction "
-                        "char_id={!r} loc_id={!r}",
-                        raw_char_id, raw_loc_id,
-                    )
-                    continue
-
-                ded = Deduction(
-                    character_id=char_obj.id,
-                    location_id=loc_obj.id,
-                    time_slot=d_data.get("time_slot", "00:00"),
-                    confidence=d_data.get("confidence", "medium"),
-                    reasoning=d_data.get("reasoning", ""),
-                    supporting_script_ids=d_data.get("supporting_script_ids", []),
-                    depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
-                )
-                app_state.add_deduction(ded)
-                count += 1
-
-            # Also collect AI-reported new entities (merge with unresolvable ones)
-            for ch in result.get("new_characters_detected", []):
-                name = ch.get("name", "").strip()
-                if name:
-                    unknown_char_names[name] = name
-            for lo in result.get("new_locations_detected", []):
-                name = lo.get("name", "").strip()
-                if name:
-                    unknown_loc_names[name] = name
-
-            logger.info(
-                "run_ai_deduction: count={} unknown_chars={} unknown_locs={}",
-                count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
-            )
-
-            refresh()
-
-            # Filter out already-registered entities
-            existing_char_names = {c.name for c in proj.characters}
-            existing_loc_names = {l.name for l in proj.locations}
-            final_unknown_chars = [
-                n for n in unknown_char_names.values() if n not in existing_char_names
-            ]
-            final_unknown_locs = [
-                n for n in unknown_loc_names.values() if n not in existing_loc_names
-            ]
-
-            if final_unknown_chars or final_unknown_locs:
-                _show_new_entities_dialog(
-                    page,
-                    [{"name": n} for n in final_unknown_chars],
-                    [{"name": n} for n in final_unknown_locs],
-                    run_ai_deduction,
-                    refresh,
-                    show_snackbar,
-                )
-            else:
-                msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
-                if contradictions:
-                    msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
-                show_snackbar("；".join(msg_parts), ft.Colors.GREEN)
-
-        except ValueError as exc:
-            show_snackbar(str(exc), ft.Colors.RED)
-        except Exception as exc:
-            show_snackbar(f"AI 推断失败: {str(exc)[:200]}", ft.Colors.RED)
-        finally:
+        async def _do_ai_deduction():
+            """The actual AI deduction logic."""
+            progress = ft.ProgressRing(width=24, height=24)
+            controls.insert(0, progress)
+            page.update()
             try:
-                controls.remove(progress)
+                from src.services.deduction import DeductionService
+                from loguru import logger
+
+                service = DeductionService()
+                show_snackbar("🤖 正在进行 AI 推断...", ft.Colors.BLUE)
+                result = await service.run_deduction(proj)
+                deductions_data = result.get("deductions", [])
+                contradictions = result.get("contradictions_detected", [])
+
+                # Build lookup maps for validation
+                char_by_id = {c.id: c for c in proj.characters}
+                loc_by_id = {l.id: l for l in proj.locations}
+                char_by_name = {c.name.lower(): c for c in proj.characters}
+                loc_by_name = {l.name.lower(): l for l in proj.locations}
+                ts_label_map: dict[str, str] = {}
+                for ts_obj in proj.time_slots:
+                    key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+                    ts_label_map[key] = ts_obj.id
+                    if ts_obj.label not in ts_label_map:
+                        ts_label_map[ts_obj.label] = ts_obj.id
+
+                count = 0
+                # Collect unresolvable raw names/ids for the "add entities" dialog
+                unknown_char_names: dict[str, str] = {}  # raw_id -> display name
+                unknown_loc_names: dict[str, str] = {}
+
+                for d_data in deductions_data:
+                    raw_char_id = d_data.get("character_id", "")
+                    raw_loc_id = d_data.get("location_id", "")
+
+                    char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
+                    loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+
+                    if not char_obj:
+                        unknown_char_names[raw_char_id] = raw_char_id
+                    if not loc_obj:
+                        unknown_loc_names[raw_loc_id] = raw_loc_id
+
+                    if not char_obj or not loc_obj:
+                        logger.warning(
+                            "run_ai_deduction: skipping unresolvable deduction "
+                            "char_id={!r} loc_id={!r}",
+                            raw_char_id, raw_loc_id,
+                        )
+                        continue
+
+                    raw_ts = d_data.get("time_slot", "")
+                    ts_id = ts_label_map.get(raw_ts, raw_ts)
+
+                    ded = Deduction(
+                        character_id=char_obj.id,
+                        location_id=loc_obj.id,
+                        time_slot=ts_id,
+                        confidence=d_data.get("confidence", "medium"),
+                        reasoning=d_data.get("reasoning", ""),
+                        supporting_script_ids=d_data.get("supporting_script_ids", []),
+                        depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
+                    )
+                    added = app_state.add_deduction(ded)
+                    if added:
+                        count += 1
+
+                # Also collect AI-reported new entities (merge with unresolvable ones)
+                for ch in result.get("new_characters_detected", []):
+                    name = ch.get("name", "").strip()
+                    if name:
+                        unknown_char_names[name] = name
+                for lo in result.get("new_locations_detected", []):
+                    name = lo.get("name", "").strip()
+                    if name:
+                        unknown_loc_names[name] = name
+
+                logger.info(
+                    "run_ai_deduction: count={} unknown_chars={} unknown_locs={}",
+                    count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
+                )
+
+                refresh()
+
+                # Filter out already-registered entities
+                existing_char_names = {c.name for c in proj.characters}
+                existing_loc_names = {l.name for l in proj.locations}
+                final_unknown_chars = [
+                    n for n in unknown_char_names.values() if n not in existing_char_names
+                ]
+                final_unknown_locs = [
+                    n for n in unknown_loc_names.values() if n not in existing_loc_names
+                ]
+
+                if final_unknown_chars or final_unknown_locs:
+                    show_snackbar(
+                        f"AI 推断完成：新增 {count} 条推断。发现新实体，请确认是否添加。",
+                        ft.Colors.GREEN,
+                    )
+                    _show_new_entities_dialog(
+                        page,
+                        [{"name": n} for n in final_unknown_chars],
+                        [{"name": n} for n in final_unknown_locs],
+                        run_ai_deduction,
+                        refresh,
+                        show_snackbar,
+                    )
+                else:
+                    msg_parts = [f"AI 推断完成：新增 {count} 条推断"]
+                    if contradictions:
+                        msg_parts.append(f"⚠️ 发现 {len(contradictions)} 个矛盾")
+                    show_snackbar("；".join(msg_parts), ft.Colors.GREEN)
+
+            except ValueError as exc:
+                show_snackbar(str(exc), ft.Colors.RED)
+            except Exception as exc:
+                show_snackbar(f"AI 推断失败: {str(exc)[:200]}", ft.Colors.RED)
+            finally:
+                try:
+                    controls.remove(progress)
+                    page.update()
+                except (ValueError, Exception):
+                    pass
+
+        if missing_chars or missing_locs or missing_times or unanalyzed_scripts:
+            warning_parts: list[ft.Control] = []
+            if unanalyzed_scripts:
+                warning_parts.append(ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13))
+            if missing_chars:
+                warning_parts.append(ft.Text(f"人物：{', '.join(missing_chars)}", size=13))
+            if missing_locs:
+                warning_parts.append(ft.Text(f"地点：{', '.join(missing_locs)}", size=13))
+            if missing_times:
+                warning_parts.append(ft.Text(f"时间段：{', '.join(missing_times)}", size=13))
+
+            def _close_ai_warn(ev):
+                _ai_warn_dlg.open = False
                 page.update()
-            except (ValueError, Exception):
-                pass
+
+            async def _proceed_ai_warn(ev):
+                _ai_warn_dlg.open = False
+                page.update()
+                await _do_ai_deduction()
+
+            _ai_warn_dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("⚠️ 发现未添加的实体"),
+                content=ft.Column([
+                    ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
+                    *warning_parts,
+                    ft.Text(
+                        "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
+                        size=13, color=ft.Colors.GREY, italic=True,
+                    ),
+                ], tight=True, spacing=8),
+                actions=[
+                    ft.TextButton("取消", on_click=_close_ai_warn),
+                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_ai_warn),
+                ],
+            )
+            page.overlay.append(_ai_warn_dlg)
+            _ai_warn_dlg.open = True
+            page.update()
+            return
+
+        # No warnings — proceed directly
+        await _do_ai_deduction()
 
     def run_cascade_deduction(e):
         """Trigger local elimination-based cascade."""
@@ -308,16 +483,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             new_deds = DeductionService.run_cascade(proj)
             count = 0
             for ded in new_deds:
-                # Avoid duplicating existing pending deductions
-                already_exists = any(
-                    d.character_id == ded.character_id
-                    and d.location_id == ded.location_id
-                    and d.time_slot == ded.time_slot
-                    and d.status == DeductionStatus.pending
-                    for d in proj.deductions
-                )
-                if not already_exists:
-                    app_state.add_deduction(ded)
+                if app_state.add_deduction(ded):
                     count += 1
             if count > 0:
                 show_snackbar(
@@ -350,6 +516,371 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         )
     )
 
+    # --- Custom Deduction Section (built here, appended at the bottom) ---
+
+    def _noop_select(e):
+        pass
+
+    # Store (id, chip_control) tuples so handler can read chip.selected directly
+    char_chip_pairs: list[tuple[str, ft.Chip]] = []
+    for c in proj.characters:
+        chip = ft.Chip(label=ft.Text(c.name), selected=False, on_select=_noop_select)
+        char_chip_pairs.append((c.id, chip))
+
+    loc_chip_pairs: list[tuple[str, ft.Chip]] = []
+    for loc in proj.locations:
+        chip = ft.Chip(label=ft.Text(loc.name), selected=False, on_select=_noop_select)
+        loc_chip_pairs.append((loc.id, chip))
+
+    time_chip_pairs: list[tuple[str, ft.Chip]] = []
+    for ts in proj.time_slots:
+        chip = ft.Chip(
+            label=ft.Text(f"{ts.label}({ts.description})" if ts.description else ts.label),
+            selected=False,
+            on_select=_noop_select,
+        )
+        time_chip_pairs.append((ts.id, chip))
+
+    char_chips = [chip for _, chip in char_chip_pairs]
+    loc_chips = [chip for _, chip in loc_chip_pairs]
+    time_chips = [chip for _, chip in time_chip_pairs]
+
+    chip_section_controls: list[ft.Control] = []
+
+    if char_chips:
+        chip_section_controls.append(
+            ft.Text("人物选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=char_chips, wrap=True, spacing=6)
+        )
+
+    if loc_chips:
+        chip_section_controls.append(
+            ft.Text("地点选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=loc_chips, wrap=True, spacing=6)
+        )
+
+    if time_chips:
+        chip_section_controls.append(
+            ft.Text("时间选择：", size=14, weight=ft.FontWeight.BOLD)
+        )
+        chip_section_controls.append(
+            ft.Row(controls=time_chips, wrap=True, spacing=6)
+        )
+
+    async def run_focused_deduction(e):
+        """Run AI deduction focused on selected chips."""
+        focus_character_ids = [cid for cid, chip in char_chip_pairs if chip.selected]
+        focus_location_ids = [lid for lid, chip in loc_chip_pairs if chip.selected]
+        focus_time_slots = [tid for tid, chip in time_chip_pairs if chip.selected]
+
+        logger.info(
+            "run_focused_deduction: focus chars={} locs={} times={}",
+            focus_character_ids, focus_location_ids, focus_time_slots,
+        )
+
+        if not focus_character_ids and not focus_location_ids and not focus_time_slots:
+            show_snackbar("请至少选择一个推断维度", ft.Colors.AMBER)
+            return
+
+        # Pre-check for unprocessed entities from script analysis
+        missing_chars, missing_locs, missing_times, unanalyzed_scripts = _check_pending_entities(proj)
+
+        async def _do_focused_deduction():
+            """The actual focused deduction logic."""
+            focus_filter = {}
+            if focus_character_ids:
+                focus_filter["character_ids"] = focus_character_ids
+            if focus_location_ids:
+                focus_filter["location_ids"] = focus_location_ids
+            if focus_time_slots:
+                focus_filter["time_slots"] = focus_time_slots
+
+            try:
+                from src.services.deduction import DeductionService
+
+                service = DeductionService()
+                logger.info("run_focused_deduction: calling API with filter={}", focus_filter)
+                show_snackbar("🎯 正在进行自定义推断...", ft.Colors.BLUE)
+                result = await service.run_focused_deduction(proj, focus_filter)
+                deductions_data = result.get("deductions", [])
+                logger.info(
+                    "run_focused_deduction: AI returned {} deductions, {} new_chars, {} new_locs",
+                    len(deductions_data),
+                    len(result.get("new_characters_detected", [])),
+                    len(result.get("new_locations_detected", [])),
+                )
+
+                # Build lookup maps for validation
+                char_by_id = {c.id: c for c in proj.characters}
+                loc_by_id = {l.id: l for l in proj.locations}
+                char_by_name = {c.name.lower(): c for c in proj.characters}
+                loc_by_name = {l.name.lower(): l for l in proj.locations}
+                ts_label_map: dict[str, str] = {}
+                for ts_obj in proj.time_slots:
+                    key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
+                    ts_label_map[key] = ts_obj.id
+                    if ts_obj.label not in ts_label_map:
+                        ts_label_map[ts_obj.label] = ts_obj.id
+
+                count = 0
+                new_deduction_details: list[tuple] = []
+                unknown_char_names: dict[str, str] = {}
+                unknown_loc_names: dict[str, str] = {}
+                for d_data in deductions_data:
+                    raw_char_id = d_data.get("character_id", "")
+                    raw_loc_id = d_data.get("location_id", "")
+
+                    char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
+                    loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+
+                    if not char_obj:
+                        unknown_char_names[raw_char_id] = raw_char_id
+                    if not loc_obj:
+                        unknown_loc_names[raw_loc_id] = raw_loc_id
+
+                    if not char_obj or not loc_obj:
+                        logger.warning(
+                            "run_focused_deduction: skipping unresolvable deduction "
+                            "char_id={!r} loc_id={!r}",
+                            raw_char_id, raw_loc_id,
+                        )
+                        continue
+
+                    raw_ts = d_data.get("time_slot", "")
+                    ts_id = ts_label_map.get(raw_ts, raw_ts)
+
+                    ded = Deduction(
+                        character_id=char_obj.id,
+                        location_id=loc_obj.id,
+                        time_slot=ts_id,
+                        confidence=d_data.get("confidence", "medium"),
+                        reasoning=d_data.get("reasoning", ""),
+                        supporting_script_ids=d_data.get("supporting_script_ids", []),
+                        depends_on_fact_ids=d_data.get("depends_on_fact_ids", []),
+                    )
+                    added = app_state.add_deduction(ded)
+                    if added:
+                        count += 1
+                        new_deduction_details.append((char_obj, loc_obj, ts_id, d_data))
+
+                # Also collect AI-reported new entities (merge with unresolvable ones)
+                for ch in result.get("new_characters_detected", []):
+                    name = ch.get("name", "").strip()
+                    if name:
+                        unknown_char_names[name] = name
+                for lo in result.get("new_locations_detected", []):
+                    name = lo.get("name", "").strip()
+                    if name:
+                        unknown_loc_names[name] = name
+
+                logger.info(
+                    "run_focused_deduction: count={} unknown_chars={} unknown_locs={}",
+                    count, list(unknown_char_names.values()), list(unknown_loc_names.values()),
+                )
+                logger.info(
+                    "run_focused_deduction: {} of {} deductions added (rest were duplicates or unresolvable)",
+                    count, len(deductions_data),
+                )
+
+                refresh()
+
+                # Filter out already-registered entities
+                existing_char_names = {c.name for c in proj.characters}
+                existing_loc_names = {l.name for l in proj.locations}
+                final_unknown_chars = [
+                    n for n in unknown_char_names.values() if n not in existing_char_names
+                ]
+                final_unknown_locs = [
+                    n for n in unknown_loc_names.values() if n not in existing_loc_names
+                ]
+
+                if final_unknown_chars or final_unknown_locs:
+                    show_snackbar(
+                        f"自定义推断完成：新增 {count} 条推断。发现新实体，请确认是否添加。",
+                        ft.Colors.GREEN,
+                    )
+                    _show_new_entities_dialog(
+                        page,
+                        [{"name": n} for n in final_unknown_chars],
+                        [{"name": n} for n in final_unknown_locs],
+                        run_focused_deduction,
+                        refresh,
+                        show_snackbar,
+                    )
+                elif count > 0:
+                    # Build a detail dialog listing each new deduction
+                    conf_colors = {
+                        "certain": ft.Colors.GREEN,
+                        "high": ft.Colors.BLUE,
+                        "medium": ft.Colors.AMBER,
+                        "low": ft.Colors.GREY,
+                    }
+                    card_controls: list[ft.Control] = []
+                    for char_obj, loc_obj, ts_id, d_data in new_deduction_details:
+                        time_label = app_state.get_time_slot_label(ts_id)
+                        confidence = d_data.get("confidence", "medium")
+                        reasoning = d_data.get("reasoning", "")
+                        conf_color = conf_colors.get(confidence, ft.Colors.GREY)
+
+                        card_content_controls: list[ft.Control] = [
+                            ft.Text(
+                                f"{char_obj.name} → {loc_obj.name} @{time_label}",
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.Container(
+                                content=ft.Text(
+                                    confidence,
+                                    size=12,
+                                    color=ft.Colors.WHITE,
+                                    weight=ft.FontWeight.BOLD,
+                                ),
+                                bgcolor=conf_color,
+                                padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+                                border_radius=10,
+                            ),
+                        ]
+                        if reasoning:
+                            card_content_controls.append(
+                                ft.Text(reasoning, size=12, color=ft.Colors.GREY_700)
+                            )
+
+                        card_controls.append(
+                            ft.Card(
+                                content=ft.Container(
+                                    content=ft.Column(
+                                        controls=card_content_controls,
+                                        spacing=6,
+                                    ),
+                                    padding=12,
+                                ),
+                            )
+                        )
+
+                    def close_focused_dlg(e):
+                        focused_dlg.open = False
+                        page.update()
+
+                    focused_dlg = ft.AlertDialog(
+                        title=ft.Text(f"🎯 自定义推断结果：新增 {count} 条"),
+                        content=ft.Container(
+                            content=ft.Column(
+                                controls=card_controls,
+                                spacing=8,
+                                scroll=ft.ScrollMode.AUTO,
+                            ),
+                            width=500,
+                            height=min(100 + 100 * count, 500),
+                        ),
+                        actions=[
+                            ft.TextButton("确定", on_click=close_focused_dlg),
+                        ],
+                    )
+                    page.overlay.append(focused_dlg)
+                    focused_dlg.open = True
+                    page.update()
+
+                elif deductions_data:
+                    dlg = ft.AlertDialog(
+                        title=ft.Text("🎯 自定义推断结果"),
+                        content=ft.Text(f"AI 返回了 {len(deductions_data)} 条推断，但均已存在于审查队列中，无新增内容。"),
+                        actions=[ft.TextButton("确定", on_click=lambda e: (setattr(dlg, 'open', False), page.update()))],
+                    )
+                    page.overlay.append(dlg)
+                    dlg.open = True
+                    page.update()
+                else:
+                    dlg = ft.AlertDialog(
+                        title=ft.Text("🎯 自定义推断结果"),
+                        content=ft.Column([
+                            ft.Text("AI 未返回任何推断结果。"),
+                            ft.Text("可能的原因：", weight=ft.FontWeight.BOLD, size=13),
+                            ft.Text("• 所选范围内的位置已全部确认", size=13),
+                            ft.Text("• 当前信息不足以推断", size=13),
+                            ft.Text("• 尝试扩大选择范围或添加更多剧本证据", size=13),
+                        ], tight=True, spacing=6),
+                        actions=[ft.TextButton("确定", on_click=lambda e: (setattr(dlg, 'open', False), page.update()))],
+                    )
+                    page.overlay.append(dlg)
+                    dlg.open = True
+                    page.update()
+
+            except ValueError as exc:
+                show_snackbar(str(exc), ft.Colors.RED)
+            except Exception as exc:
+                show_snackbar(f"自定义推断失败: {str(exc)[:200]}", ft.Colors.RED)
+
+        if missing_chars or missing_locs or missing_times or unanalyzed_scripts:
+            warning_parts: list[ft.Control] = []
+            if unanalyzed_scripts:
+                warning_parts.append(ft.Text(f"未分析的剧本：{', '.join(unanalyzed_scripts)}", size=13))
+            if missing_chars:
+                warning_parts.append(ft.Text(f"人物：{', '.join(missing_chars)}", size=13))
+            if missing_locs:
+                warning_parts.append(ft.Text(f"地点：{', '.join(missing_locs)}", size=13))
+            if missing_times:
+                warning_parts.append(ft.Text(f"时间段：{', '.join(missing_times)}", size=13))
+
+            def _close_focused_warn(ev):
+                _focused_warn_dlg.open = False
+                page.update()
+
+            async def _proceed_focused_warn(ev):
+                _focused_warn_dlg.open = False
+                page.update()
+                await _do_focused_deduction()
+
+            _focused_warn_dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("⚠️ 发现未添加的实体"),
+                content=ft.Column([
+                    ft.Text("剧本分析中发现以下实体尚未添加到项目，推断结果可能不完整："),
+                    *warning_parts,
+                    ft.Text(
+                        "建议先在「剧本」页面分析剧本并添加实体，再进行推断。",
+                        size=13, color=ft.Colors.GREY, italic=True,
+                    ),
+                ], tight=True, spacing=8),
+                actions=[
+                    ft.TextButton("取消", on_click=_close_focused_warn),
+                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_focused_warn),
+                ],
+            )
+            page.overlay.append(_focused_warn_dlg)
+            _focused_warn_dlg.open = True
+            page.update()
+            return
+
+        # No warnings — proceed directly
+        await _do_focused_deduction()
+
+    logger.info(
+        "matrix: creating focused_button, api_ok={}, on_click={}",
+        api_ok,
+        "run_focused_deduction" if api_ok else "None",
+    )
+    focused_button = ft.ElevatedButton(
+        "🎯 开始推断",
+        icon=ft.Icons.FILTER_ALT,
+        on_click=run_focused_deduction if api_ok else None,
+        disabled=not api_ok,
+        tooltip=None if api_ok else "请先在设置页面配置 API",
+    )
+
+    chip_section_controls.append(
+        ft.Text("💡 推断会综合已有剧本、事实和规则进行分析", size=12, color=ft.Colors.GREY, italic=True)
+    )
+
+    chip_section_controls.append(
+        ft.Row(controls=[focused_button], spacing=10)
+    )
+
+    # chip_section_controls will be appended in a collapsible panel at the bottom
+
     # --- Matrix DataTable ---
     rows = build_matrix_data(proj)
 
@@ -363,9 +894,10 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
             ),
         ]
         for ts in proj.time_slots:
+            ts_header = f"{ts.label}({ts.description})" if ts.description else ts.label
             dt_columns.append(
                 ft.DataColumn(
-                    ft.Text(ts, weight=ft.FontWeight.BOLD),
+                    ft.Text(ts_header, weight=ft.FontWeight.BOLD),
                 )
             )
 
@@ -381,8 +913,8 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ),
             ]
             for ts in proj.time_slots:
-                value = row_data[ts]
-                status = row_data[f"{ts}_status"]
+                value = row_data[ts.id]
+                status = row_data[f"{ts.id}_status"]
                 cells.append(_make_cell(value, status))
             dt_rows.append(ft.DataRow(cells=cells))
 
@@ -407,6 +939,82 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
     # --- Statistics Panel ---
     controls.append(ft.Divider())
     controls.append(_build_statistics(proj))
+
+    # --- Location × Time Matrix ---
+    controls.append(ft.Divider())
+    controls.append(
+        ft.Text("地点 × 时间矩阵", size=18, weight=ft.FontWeight.BOLD)
+    )
+
+    loc_rows = build_location_time_data(proj)
+    if not loc_rows:
+        controls.append(ft.Text("暂无地点数据", color=ft.Colors.GREY, size=14))
+    else:
+        # Build DataTable columns: 地点 + one per time slot
+        loc_columns = [
+            ft.DataColumn(
+                ft.Text("地点", weight=ft.FontWeight.BOLD),
+            ),
+        ]
+        for ts in proj.time_slots:
+            ts_header = f"{ts.label}({ts.description})" if ts.description else ts.label
+            loc_columns.append(
+                ft.DataColumn(
+                    ft.Text(ts_header, weight=ft.FontWeight.BOLD),
+                )
+            )
+
+        # Build DataTable rows
+        loc_dt_rows = []
+        for row_data in loc_rows:
+            cells = [
+                ft.DataCell(
+                    ft.Text(
+                        row_data["location"],
+                        weight=ft.FontWeight.BOLD,
+                    )
+                ),
+            ]
+            for ts in proj.time_slots:
+                value = row_data[ts.id]
+                status = row_data[f"{ts.id}_status"]
+                cells.append(_make_cell(value, status))
+            loc_dt_rows.append(ft.DataRow(cells=cells))
+
+        loc_data_table = ft.DataTable(
+            columns=loc_columns,
+            rows=loc_dt_rows,
+            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            border_radius=8,
+            heading_row_color=ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
+            column_spacing=20,
+        )
+
+        controls.append(
+            ft.Container(
+                content=ft.Row(
+                    controls=[loc_data_table],
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
+        )
+
+    # --- Custom Deduction Section (collapsible, at bottom) ---
+    custom_deduction_panel = ft.ExpansionPanelList(
+        elevation=2,
+        controls=[
+            ft.ExpansionPanel(
+                header=ft.ListTile(title=ft.Text("🎯 自定义推断")),
+                can_tap_header=True,
+                content=ft.Container(
+                    content=ft.Column(controls=chip_section_controls, spacing=10),
+                    padding=ft.Padding.only(left=15, right=15, bottom=15),
+                ),
+                expanded=False,
+            ),
+        ],
+    )
+    controls.append(custom_deduction_panel)
 
     return ft.Column(controls=controls, spacing=12)
 
@@ -452,12 +1060,12 @@ def _build_statistics(proj: Project) -> ft.Control:
     for char in proj.characters:
         for ts in proj.time_slots:
             has_fact = any(
-                f.character_id == char.id and f.time_slot == ts
+                f.character_id == char.id and f.time_slot == ts.id
                 for f in proj.facts
             )
             has_pending = any(
                 d.character_id == char.id
-                and d.time_slot == ts
+                and d.time_slot == ts.id
                 and d.status == DeductionStatus.pending
                 for d in proj.deductions
             )
