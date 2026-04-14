@@ -1,34 +1,15 @@
 {
   "featureId": "ui-index-migration",
-  "reviewedAt": "2026-04-14T16:00:00Z",
-  "commitId": "251ce20",
+  "reviewedAt": "2026-04-15T00:00:00Z",
+  "commitId": "07cff8df3fe0dd12a820c7808fe0d6b25ed9ab01",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "The refactor mostly centralizes UI lookups successfully, but it leaves prompt_engine and build_location_time_data still constructing ad-hoc lookup maps locally, so the feature does not fully satisfy its stated scope and architecture goal.",
-    "issues": [
-      {
-        "file": "src/services/prompt_engine.py",
-        "line": 10,
-        "severity": "blocking",
-        "description": "The feature explicitly required replacing the two ad-hoc ts_map constructions in prompt_engine.py with CacheManager lookups, but this commit only wrapped the same local dict comprehension in _build_ts_by_id() and still builds a fresh map when callers omit ts_by_id. Current production callers in src/services/deduction.py still omit the new argument, so prompt building continues rebuilding per-call maps instead of using centralized indexes."
-      },
-      {
-        "file": "src/ui/pages/matrix.py",
-        "line": 138,
-        "severity": "blocking",
-        "description": "build_location_time_data() still constructs a local char_by_id dict instead of using centralized CacheManager/AppState indexes. The feature description explicitly called out that build_location_time_data should work with centralized indexes, so this leaves one of the targeted ad-hoc lookup constructions in place and the refactor incomplete."
-      }
-    ]
+    "summary": "The fix commit resolves both prior ui-index-migration blockers. DeductionService now threads CacheManager-backed `ts_by_id` maps through all live prompt-building call paths, so prompt_engine no longer rebuilds time-slot maps in production usage. `build_location_time_data()` also now accepts an optional centralized `char_by_id` name map, and the matrix page passes a CacheManager-derived mapping at the call site.",
+    "issues": []
   },
-  "sharedStateObservations": [
-    {
-      "area": "skills",
-      "observation": "The refactor-worker skill mandates a TDD red phase, but the worker correctly skipped it for this pure refactor and documented that the step was not applicable.",
-      "evidence": "Handoff for ui-index-migration includes skillFeedback.suggestedChanges noting that the TDD red phase was not applicable for a pure refactoring with no behavior change."
-    }
-  ],
-  "addressesFailureFrom": null,
-  "summary": "Review failed: the commit centralizes several UI lookups, but it does not fully complete the migration because prompt_engine still rebuilds its own time-slot lookup maps on the live call paths and build_location_time_data still builds a local character map."
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "previous scrutiny round 1 blocking issues for ui-index-migration",
+  "summary": "Pass: the prior blocking issues are resolved. Live prompt-engine paths now use centralized cache indexes, and the location×time matrix helper is wired to centralized character-name indexes from AppState cache."
 }
