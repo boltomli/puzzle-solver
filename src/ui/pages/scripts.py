@@ -51,16 +51,8 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
         )
         return False
 
-    # Build label → ID mapping for time slots
-    ts_label_map: dict[str, str] = {}
-    for ts_obj in proj.time_slots:
-        key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
-        ts_label_map[key] = ts_obj.id
-        # Also map bare label for backward compat
-        if ts_obj.label not in ts_label_map:
-            ts_label_map[ts_obj.label] = ts_obj.id
-
-    ts_id = ts_label_map.get(ts)
+    # Use centralized ts_label_map from CacheManager
+    ts_id = app_state.cache.ts_label_map.get(ts)
     if not ts_id:
         logger.warning("_create_single_deduction: unknown time_slot label={!r}", ts)
         return False
@@ -105,14 +97,8 @@ def _create_deductions_from_facts(proj, direct_facts: list[dict], script_id: str
     Maps time_slot labels back to TimeSlot IDs.
     Returns the number of deductions successfully created.
     """
-    # Build label → ID mapping for time slots
-    ts_label_map: dict[str, str] = {}
-    for ts_obj in proj.time_slots:
-        key = f"{ts_obj.label}({ts_obj.description})" if ts_obj.description else ts_obj.label
-        ts_label_map[key] = ts_obj.id
-        # Also map bare label for backward compat
-        if ts_obj.label not in ts_label_map:
-            ts_label_map[ts_obj.label] = ts_obj.id
+    # Use centralized ts_label_map from CacheManager
+    ts_label_map = app_state.cache.ts_label_map
 
     created = 0
     for df in direct_facts:

@@ -134,6 +134,9 @@ def build_location_time_data(project: Project) -> list[dict]:
     if not project.locations:
         return []
 
+    # Build character name lookup once (outside the loop)
+    char_by_id = {c.id: c.name for c in project.characters}
+
     rows = []
     for loc in project.locations:
         row: dict = {"id": loc.id, "location": loc.name}
@@ -156,9 +159,6 @@ def build_location_time_data(project: Project) -> list[dict]:
                     and d.status == DeductionStatus.pending
                 )
             )
-
-            # Build character name lookup
-            char_by_id = {c.id: c.name for c in project.characters}
 
             # Get confirmed character names
             confirmed_names = [char_by_id[cid] for cid in confirmed_char_ids if cid in char_by_id]
@@ -319,21 +319,8 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 deductions_data = result.get("deductions", [])
                 contradictions = result.get("contradictions_detected", [])
 
-                # Build lookup maps for validation
-                char_by_id = {c.id: c for c in proj.characters}
-                loc_by_id = {lo.id: lo for lo in proj.locations}
-                char_by_name = {c.name.lower(): c for c in proj.characters}
-                loc_by_name = {lo.name.lower(): lo for lo in proj.locations}
-                ts_label_map: dict[str, str] = {}
-                for ts_obj in proj.time_slots:
-                    key = (
-                        f"{ts_obj.label}({ts_obj.description})"
-                        if ts_obj.description
-                        else ts_obj.label
-                    )
-                    ts_label_map[key] = ts_obj.id
-                    if ts_obj.label not in ts_label_map:
-                        ts_label_map[ts_obj.label] = ts_obj.id
+                # Use centralized CacheManager indexes for validation
+                cache = app_state.cache
 
                 count = 0
                 # Collect unresolvable raw names/ids for the "add entities" dialog
@@ -344,8 +331,12 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     raw_char_id = d_data.get("character_id", "")
                     raw_loc_id = d_data.get("location_id", "")
 
-                    char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
-                    loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+                    char_obj = cache.char_by_id.get(raw_char_id) or cache.char_by_name.get(
+                        raw_char_id.lower()
+                    )
+                    loc_obj = cache.loc_by_id.get(raw_loc_id) or cache.loc_by_name.get(
+                        raw_loc_id.lower()
+                    )
 
                     if not char_obj:
                         unknown_char_names[raw_char_id] = raw_char_id
@@ -362,7 +353,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                         continue
 
                     raw_ts = d_data.get("time_slot", "")
-                    ts_id = ts_label_map.get(raw_ts, raw_ts)
+                    ts_id = cache.ts_label_map.get(raw_ts, raw_ts)
 
                     ded = Deduction(
                         character_id=char_obj.id,
@@ -619,21 +610,8 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     len(result.get("new_locations_detected", [])),
                 )
 
-                # Build lookup maps for validation
-                char_by_id = {c.id: c for c in proj.characters}
-                loc_by_id = {lo.id: lo for lo in proj.locations}
-                char_by_name = {c.name.lower(): c for c in proj.characters}
-                loc_by_name = {lo.name.lower(): lo for lo in proj.locations}
-                ts_label_map: dict[str, str] = {}
-                for ts_obj in proj.time_slots:
-                    key = (
-                        f"{ts_obj.label}({ts_obj.description})"
-                        if ts_obj.description
-                        else ts_obj.label
-                    )
-                    ts_label_map[key] = ts_obj.id
-                    if ts_obj.label not in ts_label_map:
-                        ts_label_map[ts_obj.label] = ts_obj.id
+                # Use centralized CacheManager indexes for validation
+                cache = app_state.cache
 
                 count = 0
                 new_deduction_details: list[tuple] = []
@@ -643,8 +621,12 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                     raw_char_id = d_data.get("character_id", "")
                     raw_loc_id = d_data.get("location_id", "")
 
-                    char_obj = char_by_id.get(raw_char_id) or char_by_name.get(raw_char_id.lower())
-                    loc_obj = loc_by_id.get(raw_loc_id) or loc_by_name.get(raw_loc_id.lower())
+                    char_obj = cache.char_by_id.get(raw_char_id) or cache.char_by_name.get(
+                        raw_char_id.lower()
+                    )
+                    loc_obj = cache.loc_by_id.get(raw_loc_id) or cache.loc_by_name.get(
+                        raw_loc_id.lower()
+                    )
 
                     if not char_obj:
                         unknown_char_names[raw_char_id] = raw_char_id
@@ -661,7 +643,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                         continue
 
                     raw_ts = d_data.get("time_slot", "")
-                    ts_id = ts_label_map.get(raw_ts, raw_ts)
+                    ts_id = cache.ts_label_map.get(raw_ts, raw_ts)
 
                     ded = Deduction(
                         character_id=char_obj.id,

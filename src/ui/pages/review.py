@@ -77,9 +77,8 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
     if not proj:
         return ft.Text("请先选择或创建一个项目", color=ft.Colors.GREY)
 
-    # Build lookup maps
-    char_map = {c.id: c.name for c in proj.characters}
-    loc_map = {loc.id: loc.name for loc in proj.locations}
+    # Use centralized CacheManager indexes
+    cache = app_state.cache
 
     # --- Pending deductions ---
     pending = [d for d in proj.deductions if d.status == DeductionStatus.pending]
@@ -165,8 +164,10 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
 
         # --- Deduction cards ---
         for ded in pending:
-            char_name = char_map.get(ded.character_id, ded.character_id[:8])
-            loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+            char_obj = cache.char_by_id.get(ded.character_id)
+            char_name = char_obj.name if char_obj else ded.character_id[:8]
+            loc_obj = cache.loc_by_id.get(ded.location_id)
+            loc_name = loc_obj.name if loc_obj else ded.location_id[:8]
             ts_label = app_state.get_time_slot_label(ded.time_slot)
             conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
             conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)
@@ -295,7 +296,7 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
             )
 
     # --- Deduction History ---
-    history_control = _build_deduction_history(proj, char_map, loc_map)
+    history_control = _build_deduction_history(proj, cache)
     if history_control:
         controls.append(ft.Divider())
         controls.append(history_control)
@@ -303,11 +304,15 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
     return ft.Column(controls=controls, spacing=12)
 
 
-def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
+def _build_deduction_history(proj, cache) -> ft.Control | None:
     """Build the deduction history section as an ExpansionTile.
 
     Shows resolved (accepted/rejected) deductions sorted by resolved_at descending.
     Returns None if no resolved deductions exist.
+
+    Args:
+        proj: The current project.
+        cache: CacheManager instance for centralized index lookups.
     """
     resolved = [
         d
@@ -321,11 +326,8 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
     # Sort by resolved_at descending (most recent first)
     resolved.sort(key=lambda d: d.resolved_at or d.created_at, reverse=True)
 
-    # Build rejection reason map
-    rejection_map = {}
-    for r in proj.rejections:
-        if r.from_deduction_id:
-            rejection_map[r.from_deduction_id] = r.reason
+    # Use centralized rejection_map from CacheManager
+    rejection_map = cache.rejection_map
 
     history_items: list[ft.Control] = [
         ft.Text(
@@ -336,8 +338,10 @@ def _build_deduction_history(proj, char_map, loc_map) -> ft.Control | None:
     ]
 
     for ded in resolved:
-        char_name = char_map.get(ded.character_id, ded.character_id[:8])
-        loc_name = loc_map.get(ded.location_id, ded.location_id[:8])
+        char_obj = cache.char_by_id.get(ded.character_id)
+        char_name = char_obj.name if char_obj else ded.character_id[:8]
+        loc_obj = cache.loc_by_id.get(ded.location_id)
+        loc_name = loc_obj.name if loc_obj else ded.location_id[:8]
         ts_label = app_state.get_time_slot_label(ded.time_slot)
         conf_label = _CONFIDENCE_LABELS.get(ded.confidence, str(ded.confidence))
         conf_color = _CONFIDENCE_COLORS.get(ded.confidence, ft.Colors.GREY)

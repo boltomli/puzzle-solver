@@ -27,6 +27,7 @@ from src.models.puzzle import (
     SourceType,
     TimeSlot,
 )
+from src.storage.cache_manager import CacheManager
 from src.storage.json_repository import JsonRepository
 from src.storage.json_store import JsonStore
 
@@ -48,6 +49,23 @@ class AppState:
     def store(self) -> JsonStore:
         """Expose the underlying JsonStore for callers that access it directly."""
         return self._repo.store
+
+    @property
+    def cache(self) -> CacheManager:
+        """Expose the CacheManager for centralized index lookups.
+
+        UI pages and services should use this instead of building ad-hoc
+        lookup maps.  Common indexes available:
+
+        - ``cache.char_by_id``   : {char_id: Character}
+        - ``cache.loc_by_id``    : {loc_id: Location}
+        - ``cache.ts_by_id``     : {ts_id: TimeSlot}
+        - ``cache.char_by_name`` : {name.lower(): Character}
+        - ``cache.loc_by_name``  : {name.lower(): Location}
+        - ``cache.ts_label_map`` : {label_str: ts_id}
+        - ``cache.rejection_map``: {from_deduction_id: reason}
+        """
+        return self._repo._cache
 
     @property
     def current_project(self) -> Project | None:

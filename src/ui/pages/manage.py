@@ -948,8 +948,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
     if not facts:
         fact_controls.append(ft.Text("暂无事实记录", color=ft.Colors.GREY, size=13))
     else:
-        char_map = {c.id: c.name for c in chars}
-        loc_map = {lo.id: lo.name for lo in locs}
+        cache = app_state.cache
 
         fact_controls.append(
             ft.Text(f"已有 {len(facts)} 条事实", size=14, weight=ft.FontWeight.BOLD)
@@ -957,8 +956,10 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         fact_controls.append(ft.Divider())
 
         for f in facts:
-            char_name = char_map.get(f.character_id, f.character_id[:8])
-            loc_name = loc_map.get(f.location_id, f.location_id[:8])
+            char_obj = cache.char_by_id.get(f.character_id)
+            char_name = char_obj.name if char_obj else f.character_id[:8]
+            loc_obj = cache.loc_by_id.get(f.location_id)
+            loc_name = loc_obj.name if loc_obj else f.location_id[:8]
             source_label = _source_type_label(f.source_type)
 
             def make_fact_delete_handler(fact=f):

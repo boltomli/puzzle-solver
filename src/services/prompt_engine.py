@@ -8,6 +8,15 @@ from src.models.puzzle import Project, Script, TimeSlot
 from src.services.config import load_config
 
 
+def _build_ts_by_id(project: Project) -> dict[str, TimeSlot]:
+    """Build a ts.id → TimeSlot lookup map from the project.
+
+    This is a fallback for when no CacheManager is available.
+    Callers with access to CacheManager should pass ``cache.ts_by_id`` instead.
+    """
+    return {ts.id: ts for ts in project.time_slots}
+
+
 def _format_ts(ts: TimeSlot) -> str:
     """Format a TimeSlot for human-readable display in prompts."""
     return f"{ts.label}({ts.description})" if ts.description else ts.label
@@ -53,6 +62,7 @@ class PromptEngine:
         self,
         project: Project,
         focus_filter: dict | None = None,
+        ts_by_id: dict[str, TimeSlot] | None = None,
     ) -> tuple[str, str]:
         """Build system + user prompt for a full deduction pass.
 
@@ -64,6 +74,8 @@ class PromptEngine:
                 - ``time_slots``: list of time slots to focus on
                 When provided, the UNFILLED SLOTS section only lists matching cells
                 and a FOCUS AREA section is added to guide the AI.
+            ts_by_id: Optional pre-built ts.id→TimeSlot map (e.g. from CacheManager).
+                Falls back to building from the project if not provided.
 
         Returns:
             (system_prompt, user_prompt) tuple.
@@ -74,11 +86,24 @@ class PromptEngine:
         if not system_prompt.strip():
             system_prompt = self.DEFAULT_SYSTEM_PROMPT
 
-        user_prompt = self._build_user_prompt(project, focus_filter=focus_filter)
+        if ts_by_id is None:
+            ts_by_id = _build_ts_by_id(project)
+        user_prompt = self._build_user_prompt(project, focus_filter=focus_filter, ts_by_id=ts_by_id)
         return system_prompt, user_prompt
 
-    def build_script_analysis_prompt(self, project: Project, script: Script) -> tuple[str, str]:
+    def build_script_analysis_prompt(
+        self,
+        project: Project,
+        script: Script,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> tuple[str, str]:
         """Build prompt for analyzing a single new script.
+
+        Args:
+            project: The project to build the prompt for.
+            script: The script to analyze.
+            ts_by_id: Optional pre-built ts.id→TimeSlot map (e.g. from CacheManager).
+                Falls back to building from the project if not provided.
 
         Returns:
             (system_prompt, user_prompt) tuple.
@@ -88,10 +113,17 @@ class PromptEngine:
             "Analyze the given script and extract characters, locations, time references, "
             "and direct facts. Respond only with the requested JSON."
         )
-        user_prompt = self._build_script_analysis_user_prompt(project, script)
+        if ts_by_id is None:
+            ts_by_id = _build_ts_by_id(project)
+        user_prompt = self._build_script_analysis_user_prompt(project, script, ts_by_id=ts_by_id)
         return system_prompt, user_prompt
 
-    def _build_user_prompt(self, project: Project, focus_filter: dict | None = None) -> str:
+    def _build_user_prompt(
+        self,
+        project: Project,
+        focus_filter: dict | None = None,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> str:
         """Assemble the full deduction user prompt."""
         parts: list[str] = []
 
@@ -126,8 +158,8 @@ class PromptEngine:
         for hint in project.hints:
             parts.append(f"- [{hint.type.value.upper()}] {hint.content}")
 
-        # Build ts_map for ID→TimeSlot lookup
-        ts_map = {ts.id: ts for ts in project.time_slots}
+        # Use provided ts_by_id or build fallback
+        ts_map = ts_by_id if ts_by_id is not None else _build_ts_by_id(project)
 
         # Confirmed facts
         parts.append("\n## CONFIRMED FACTS")
@@ -260,7 +292,12 @@ class PromptEngine:
 
         return "\n".join(parts)
 
-    def _build_script_analysis_user_prompt(self, project: Project, script: Script) -> str:
+    def _build_script_analysis_user_prompt(
+        self,
+        project: Project,
+        script: Script,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> str:
         """Assemble the script analysis user prompt."""
         parts: list[str] = []
 
@@ -289,7 +326,7 @@ class PromptEngine:
         )
 
         # Confirmed facts
-        ts_map = {ts.id: ts for ts in project.time_slots}
+        ts_map = ts_by_id if ts_by_id is not None else _build_ts_by_id(project)
         parts.append("\n### Confirmed Facts")
         for fact in project.facts:
             char = next((c for c in project.characters if c.id == fact.character_id), None)
