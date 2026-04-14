@@ -1,0 +1,98 @@
+{
+  "milestone": "repo-foundation",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && .venv\\Scripts\\python -m pytest tests/ -v --tb=short -x",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && echo \"no typecheck configured\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cd D:\\exp\\puzzle-solver && .venv\\Scripts\\ruff check src/ tests/",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 0,
+    "failed": 3,
+    "failedFeatures": [
+      "cache-manager",
+      "json-repo-cascade",
+      "json-repo-crud"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "cache-manager",
+      "severity": "blocking",
+      "description": "The Repository Protocol does not cover all current AppState data operations as required. The mission requires a protocol matching the current AppState public API exactly so AppState can later delegate all operations through it, but this interface is only a subset of that API surface."
+    },
+    {
+      "featureId": "cache-manager",
+      "severity": "blocking",
+      "description": "invalidate_character('remove'/'update') only removes char_by_name entries when the map value is the same object being mutated. After rebuild(), duplicate lowercase names are last-writer-wins, so removing or renaming that winning character leaves no mapping for an older duplicate still present in the project. The cache becomes stale until a full rebuild, violating the requirement that indexes stay consistent after add/remove/update sequences."
+    },
+    {
+      "featureId": "cache-manager",
+      "severity": "blocking",
+      "description": "invalidate_location('remove'/'update') has the same stale-index bug as characters: when duplicate lowercase names exist, removing or renaming the current winner deletes the key instead of falling back to the remaining duplicate. Incremental cache state diverges from rebuild() output."
+    },
+    {
+      "featureId": "json-repo-cascade",
+      "severity": "blocking",
+      "description": "There is no persistence test that reloads from disk after removing a time slot with an associated rejected deduction or rejection record. The feature contract requires cascaded deletion of Facts, Deductions, and Rejections for time-slot removal plus atomic persistence on reload, but test_timeslot_cascade_persists only covers facts. A regression leaving orphaned rejections or deductions on disk after time-slot deletion would pass this suite."
+    },
+    {
+      "featureId": "json-repo-crud",
+      "severity": "blocking",
+      "description": "remove_character only removes the Character itself. The feature contract for json-repo-crud requires remove operations to keep CacheManager indexes consistent in real time (VAL-IDX-005/006 coverage called out in the handoff), but removing a character that has facts/deductions/rejections leaves those records behind and leaves stale triples in fact_index/pending_index/rejection_index until the later cascade feature. That means the repository state after a CRUD remove is internally inconsistent for this feature's own expectedBehavior."
+    },
+    {
+      "featureId": "json-repo-crud",
+      "severity": "blocking",
+      "description": "remove_location has the same correctness gap as remove_character: it deletes the Location but leaves any referencing Fact/Deduction/Rejection records and dedup indexes untouched. This violates the repository's stated cache-coherence invariant for mutations and can incorrectly block future deductions with stale triples after a location delete."
+    },
+    {
+      "featureId": "json-repo-crud",
+      "severity": "blocking",
+      "description": "remove_time_slot removes the TimeSlot entry but does not clean referencing facts/deductions/rejections or dedup indexes. Even before explicit cascade-delete support was added later, this breaks the feature's own index-consistency expectations because get_time_slot_by_id() returns None while stale triples involving the deleted time slot still remain in cache-backed dedup sets."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "The transcript shows repeated failed attempts to use non-existent Create/Edit-style tools before falling back to working tools, but the available-tool guidance for this mission does not clearly reflect the actual tool surface in this environment. This caused avoidable time spent on tooling confusion.",
+      "evidence": "worker-transcripts.jsonl entry for b7676957-3427-49b5-9d1e-6f3abfe8bc25 contains multiple failed tool calls like '## Tool: Create' and later retries before succeeding.",
+      "isSystemic": false
+    },
+    {
+      "target": "library",
+      "suggestion": "Document that `Script.metadata.characters_mentioned` stores character names (not IDs), because cascade cleanup for character removal must match by name.",
+      "evidence": "src/models/puzzle.py:56-61 defines characters_mentioned as list[str]; src/storage/json_repository.py:187-195 removes by character name; tests/test_cascade.py:161-193 verifies name-based cleanup.",
+      "isSystemic": false
+    },
+    {
+      "target": "skill",
+      "suggestion": "The refactor-worker skill says to compare expected behavior to architecture invariants and verify cache invalidation after representative mutations, but this feature still shipped remove_* methods that left stale related records/indexes. The skill may need a stronger explicit checkpoint to inspect removal-side cache coherence, not just add/update flows.",
+      "evidence": "SKILL.md Step 5 asks workers to review 'Missing cache invalidation after mutations'; commit d252752 remove_character/remove_location/remove_time_slot only invalidate the removed entity, while tests/test_json_repository.py lacks assertions for dependent-record/index cleanup after removals.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "This mission's architecture doc already states the invariant that repository mutations must maintain cache coherence and mentions cascade delete as a key improvement, but the feature handoff claims VAL-IDX coverage without noting that remove_* semantics remained inconsistent until the follow-up cascade feature. A short note in mission guidance clarifying that pre-cascade remove operations still need coherent cache state would likely prevent this misread.",
+      "evidence": ".factory/library/architecture.md invariant #2 says every mutation must avoid stale indexes, while commit d252752 remove_* methods leave referenced fact/deduction/rejection data untouched and tests do not check for stale dedup entries after removals.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

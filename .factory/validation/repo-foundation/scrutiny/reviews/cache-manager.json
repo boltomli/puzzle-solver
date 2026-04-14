@@ -1,0 +1,46 @@
+{
+  "featureId": "cache-manager",
+  "reviewedAt": "2026-04-14T00:00:00Z",
+  "commitId": "7f49c52",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature largely implements the requested protocol and cache indexes, but the Repository Protocol is incomplete relative to the current AppState public API and the CacheManager remove/update logic leaves stale by-name entries when duplicate names exist.",
+    "issues": [
+      {
+        "file": "src/storage/repository.py",
+        "line": 25,
+        "severity": "blocking",
+        "description": "The Repository Protocol does not cover all current AppState data operations as required. The mission requires a protocol matching the current AppState public API exactly so AppState can later delegate all operations through it, but this interface is only a subset of that API surface."
+      },
+      {
+        "file": "src/storage/cache_manager.py",
+        "line": 112,
+        "severity": "blocking",
+        "description": "invalidate_character('remove'/'update') only removes char_by_name entries when the map value is the same object being mutated. After rebuild(), duplicate lowercase names are last-writer-wins, so removing or renaming that winning character leaves no mapping for an older duplicate still present in the project. The cache becomes stale until a full rebuild, violating the requirement that indexes stay consistent after add/remove/update sequences."
+      },
+      {
+        "file": "src/storage/cache_manager.py",
+        "line": 145,
+        "severity": "blocking",
+        "description": "invalidate_location('remove'/'update') has the same stale-index bug as characters: when duplicate lowercase names exist, removing or renaming the current winner deletes the key instead of falling back to the remaining duplicate. Incremental cache state diverges from rebuild() output."
+      },
+      {
+        "file": "tests/test_cache_manager.py",
+        "line": 451,
+        "severity": "non_blocking",
+        "description": "The test suite checks duplicate-name rebuild semantics but does not cover duplicate-name incremental removal/update cases, so the stale by-name regression above would pass unnoticed."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The transcript shows repeated failed attempts to use non-existent Create/Edit-style tools before falling back to working tools, but the available-tool guidance for this mission does not clearly reflect the actual tool surface in this environment. This caused avoidable time spent on tooling confusion.",
+      "evidence": "worker-transcripts.jsonl entry for b7676957-3427-49b5-9d1e-6f3abfe8bc25 contains multiple failed tool calls like '## Tool: Create' and later retries before succeeding."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review failed: CacheManager has correctness gaps for duplicate-name incremental invalidation, and Repository Protocol is not a complete match for the current AppState API the mission architecture depends on. Report written for scrutiny triage."
+}

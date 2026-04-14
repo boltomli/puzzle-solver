@@ -1,0 +1,34 @@
+{
+  "featureId": "json-repo-cascade",
+  "reviewedAt": "2026-04-14T00:00:00Z",
+  "commitId": "f4b2f6a290d38c1648eec3ef8bd3ebbbd14caa99",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Cascade delete implementation mostly matches the feature, but the persistence test suite misses a required case and includes a no-op helper call that means atomic persistence for rejected records is not actually validated for time-slot-linked data.",
+    "issues": [
+      {
+        "file": "tests/test_cascade.py",
+        "line": 534,
+        "severity": "non_blocking",
+        "description": "The helper-created extra deduction in the persistence test is never added to the repository, so the test does not exercise the intended extra persisted record state. This weakens the claimed VAL-CASCADE-007 coverage for multi-record cascade persistence."
+      },
+      {
+        "file": "tests/test_cascade.py",
+        "line": 561,
+        "severity": "blocking",
+        "description": "There is no persistence test that reloads from disk after removing a time slot with an associated rejected deduction or rejection record. The feature contract requires cascaded deletion of Facts, Deductions, and Rejections for time-slot removal plus atomic persistence on reload, but test_timeslot_cascade_persists only covers facts. A regression leaving orphaned rejections or deductions on disk after time-slot deletion would pass this suite."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The mission shared state does not mention that Script.metadata.characters_mentioned stores character names rather than IDs, which directly affects cascade behavior for character removal and required name-based cleanup logic.",
+      "evidence": "src/models/puzzle.py:56-61 defines characters_mentioned as list[str]; src/storage/json_repository.py:187-195 removes by character name; tests/test_cascade.py:161-193 verifies name-based cleanup."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review failed. The implementation looks sound, but the added test coverage does not fully verify VAL-CASCADE-007 for time-slot cascades because persisted rejected-deduction or rejection state is never reloaded and checked after a time-slot delete."
+}
