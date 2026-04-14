@@ -2,18 +2,19 @@
 
 All UI mutations go through AppState methods which handle persistence.
 The Flet UI layer will call page.update() directly after state changes.
+
+AppState is a thin coordinator: it holds a JsonRepository instance and
+delegates all data operations to it.  Public method signatures remain
+identical to the original implementation so that existing callers
+(UI pages, tests, services) are unaffected.
 """
 
-import re
-from datetime import datetime
-
-from loguru import logger
+from __future__ import annotations
 
 from src.models.puzzle import (
     Character,
     CharacterStatus,
     Deduction,
-    DeductionStatus,
     EntityKind,
     Fact,
     Hint,
@@ -23,54 +24,81 @@ from src.models.puzzle import (
     Project,
     Rejection,
     Script,
-    ScriptMetadata,
     SourceType,
     TimeSlot,
 )
+from src.storage.json_repository import JsonRepository
 from src.storage.json_store import JsonStore
 
 
 class AppState:
-    """Manages the currently loaded project and provides state access."""
+    """Manages the currently loaded project and provides state access.
 
-    def __init__(self, store: JsonStore | None = None):
-        self.store = store or JsonStore()
-        self.current_project: Project | None = None
-        # Deduplication indexes: O(1) lookup for (character_id, location_id, time_slot) triples
-        self._fact_index: set[tuple[str, str, str]] = set()
-        self._pending_index: set[tuple[str, str, str]] = set()
-        self._rejection_index: set[tuple[str, str, str]] = set()
+    Internally delegates all data operations to a :class:`JsonRepository`.
+    """
+
+    def __init__(self, store: JsonStore | None = None) -> None:
+        self._repo = JsonRepository(store=store)
+
+    # ------------------------------------------------------------------
+    # Backward-compatibility attributes
+    # ------------------------------------------------------------------
+
+    @property
+    def store(self) -> JsonStore:
+        """Expose the underlying JsonStore for callers that access it directly."""
+        return self._repo.store
+
+    @property
+    def current_project(self) -> Project | None:
+        """The currently loaded project (delegates to repository)."""
+        return self._repo.current_project
+
+    @current_project.setter
+    def current_project(self, value: Project | None) -> None:
+        self._repo.current_project = value
+
+    # Deduplication index proxies — some tests read/write these directly.
+
+    @property
+    def _fact_index(self) -> set[tuple[str, str, str]]:
+        return self._repo._cache.fact_index
+
+    @_fact_index.setter
+    def _fact_index(self, value: set[tuple[str, str, str]]) -> None:
+        self._repo._cache.fact_index = value
+
+    @property
+    def _pending_index(self) -> set[tuple[str, str, str]]:
+        return self._repo._cache.pending_index
+
+    @_pending_index.setter
+    def _pending_index(self, value: set[tuple[str, str, str]]) -> None:
+        self._repo._cache.pending_index = value
+
+    @property
+    def _rejection_index(self) -> set[tuple[str, str, str]]:
+        return self._repo._cache.rejection_index
+
+    @_rejection_index.setter
+    def _rejection_index(self, value: set[tuple[str, str, str]]) -> None:
+        self._repo._cache.rejection_index = value
 
     def _rebuild_indexes(self) -> None:
-        """Rebuild all three deduplication indexes from current project data."""
-        self._fact_index = set()
-        self._pending_index = set()
-        self._rejection_index = set()
-        if not self.current_project:
-            return
-        for f in self.current_project.facts:
-            self._fact_index.add((f.character_id, f.location_id, f.time_slot))
-        for d in self.current_project.deductions:
-            if d.status == DeductionStatus.pending:
-                self._pending_index.add((d.character_id, d.location_id, d.time_slot))
-        for r in self.current_project.rejections:
-            self._rejection_index.add((r.character_id, r.location_id, r.time_slot))
+        """Rebuild all deduplication indexes from current project data."""
+        self._repo._rebuild_indexes()
 
-    # --- Project management ---
+    # ------------------------------------------------------------------
+    # Project management (delegates to repository)
+    # ------------------------------------------------------------------
 
     def load_project(self, project_id: str) -> None:
         """Load a project by ID and set it as the current project."""
-        self.current_project = self.store.load_project(project_id)
-        self._rebuild_indexes()
-        logger.info(
-            "AppState.load_project: loaded {!r} (id={})", self.current_project.name, project_id
-        )
+        self._repo.load_project(project_id)
 
     def save(self) -> None:
         """Save the current project to disk."""
-        if self.current_project:
-            self.current_project.updated_at = datetime.now()
-            self.store.save_project(self.current_project)
+        self._repo.save()
 
     def create_project(
         self,
@@ -79,28 +107,23 @@ class AppState:
         time_slots: list[str] | None = None,
     ) -> Project:
         """Create a new project, save it, and set it as current."""
-        project = self.store.create_project(
+        return self._repo.create_project(
             name=name,
             description=description,
-            time_slots=time_slots or [],
+            time_slots=time_slots,
         )
-        self.current_project = project
-        self._rebuild_indexes()
-        logger.info("AppState.create_project: created {!r} (id={})", name, project.id)
-        return project
 
     def delete_project(self, project_id: str) -> None:
         """Delete a project. If it's the current project, unset it."""
-        self.store.delete_project(project_id)
-        if self.current_project and self.current_project.id == project_id:
-            self.current_project = None
-        logger.info("AppState.delete_project: deleted id={!r}", project_id)
+        self._repo.delete_project(project_id)
 
     def list_projects(self):
         """List all available projects as summaries."""
-        return self.store.list_projects()
+        return self._repo.list_projects()
 
-    # --- Character management ---
+    # ------------------------------------------------------------------
+    # Character management
+    # ------------------------------------------------------------------
 
     def add_character(
         self,
@@ -110,18 +133,12 @@ class AppState:
         status: CharacterStatus = CharacterStatus.confirmed,
     ) -> Character:
         """Add a character to the current project."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        char = Character(
+        return self._repo.add_character(
             name=name,
-            aliases=aliases or [],
+            aliases=aliases,
             description=description,
             status=status,
         )
-        self.current_project.characters.append(char)
-        self.save()
-        logger.info("AppState.add_character: added {!r} (id={})", name, char.id)
-        return char
 
     def update_character(
         self,
@@ -132,42 +149,21 @@ class AppState:
         status: CharacterStatus | None = None,
     ) -> Character | None:
         """Update a character's fields. Returns the updated character or None."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        for char in self.current_project.characters:
-            if char.id == character_id:
-                if name is not None:
-                    char.name = name
-                if aliases is not None:
-                    char.aliases = aliases
-                if description is not None:
-                    char.description = description
-                if status is not None:
-                    char.status = status
-                self.save()
-                logger.info(
-                    "AppState.update_character: updated id={!r} name={!r}", character_id, char.name
-                )
-                return char
-        logger.warning("AppState.update_character: id={!r} not found", character_id)
-        return None
+        return self._repo.update_character(
+            character_id=character_id,
+            name=name,
+            aliases=aliases,
+            description=description,
+            status=status,
+        )
 
     def remove_character(self, character_id: str) -> bool:
         """Remove a character by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        original_len = len(self.current_project.characters)
-        self.current_project.characters = [
-            c for c in self.current_project.characters if c.id != character_id
-        ]
-        if len(self.current_project.characters) < original_len:
-            self.save()
-            logger.info("AppState.remove_character: removed id={!r}", character_id)
-            return True
-        logger.warning("AppState.remove_character: id={!r} not found", character_id)
-        return False
+        return self._repo.remove_character(character_id)
 
-    # --- Location management ---
+    # ------------------------------------------------------------------
+    # Location management
+    # ------------------------------------------------------------------
 
     def add_location(
         self,
@@ -176,17 +172,11 @@ class AppState:
         description: str | None = None,
     ) -> Location:
         """Add a location to the current project."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        loc = Location(
+        return self._repo.add_location(
             name=name,
-            aliases=aliases or [],
+            aliases=aliases,
             description=description,
         )
-        self.current_project.locations.append(loc)
-        self.save()
-        logger.info("AppState.add_location: added {!r} (id={})", name, loc.id)
-        return loc
 
     def update_location(
         self,
@@ -196,40 +186,20 @@ class AppState:
         description: str | None = None,
     ) -> Location | None:
         """Update a location's fields. Returns the updated location or None."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        for loc in self.current_project.locations:
-            if loc.id == location_id:
-                if name is not None:
-                    loc.name = name
-                if aliases is not None:
-                    loc.aliases = aliases
-                if description is not None:
-                    loc.description = description
-                self.save()
-                logger.info(
-                    "AppState.update_location: updated id={!r} name={!r}", location_id, loc.name
-                )
-                return loc
-        logger.warning("AppState.update_location: id={!r} not found", location_id)
-        return None
+        return self._repo.update_location(
+            location_id=location_id,
+            name=name,
+            aliases=aliases,
+            description=description,
+        )
 
     def remove_location(self, location_id: str) -> bool:
         """Remove a location by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        original_len = len(self.current_project.locations)
-        self.current_project.locations = [
-            loc for loc in self.current_project.locations if loc.id != location_id
-        ]
-        if len(self.current_project.locations) < original_len:
-            self.save()
-            logger.info("AppState.remove_location: removed id={!r}", location_id)
-            return True
-        logger.warning("AppState.remove_location: id={!r} not found", location_id)
-        return False
+        return self._repo.remove_location(location_id)
 
-    # --- Script management ---
+    # ------------------------------------------------------------------
+    # Script management
+    # ------------------------------------------------------------------
 
     def add_script(
         self,
@@ -240,28 +210,13 @@ class AppState:
         stated_location: str | None = None,
     ) -> Script:
         """Add a script to the current project."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        metadata = ScriptMetadata(
+        return self._repo.add_script(
+            raw_text=raw_text,
+            title=title,
+            user_notes=user_notes,
             stated_time=stated_time,
             stated_location=stated_location,
-            user_notes=user_notes,
-            source_order=len(self.current_project.scripts) + 1,
         )
-        script = Script(
-            title=title,
-            raw_text=raw_text,
-            metadata=metadata,
-        )
-        self.current_project.scripts.append(script)
-        self.save()
-        logger.info(
-            "AppState.add_script: added {!r} (id={}) len={}",
-            title or "Untitled",
-            script.id,
-            len(raw_text),
-        )
-        return script
 
     def update_script(
         self,
@@ -271,51 +226,24 @@ class AppState:
         user_notes: str | None = None,
     ) -> Script | None:
         """Update a script's fields. Returns the updated script or None."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        for script in self.current_project.scripts:
-            if script.id == script_id:
-                if title is not None:
-                    script.title = title
-                if raw_text is not None:
-                    script.raw_text = raw_text
-                if user_notes is not None:
-                    script.metadata.user_notes = user_notes
-                self.save()
-                logger.info("AppState.update_script: updated id={!r}", script_id)
-                return script
-        logger.warning("AppState.update_script: id={!r} not found", script_id)
-        return None
+        return self._repo.update_script(
+            script_id=script_id,
+            title=title,
+            raw_text=raw_text,
+            user_notes=user_notes,
+        )
 
     def save_script_analysis(self, script_id: str, result: dict) -> bool:
         """Save analysis result to a script. Returns True if saved."""
-        if not self.current_project:
-            return False
-        for script in self.current_project.scripts:
-            if script.id == script_id:
-                script.analysis_result = result
-                self.save()
-                logger.info("AppState.save_script_analysis: saved for id={!r}", script_id)
-                return True
-        logger.warning("AppState.save_script_analysis: script id={!r} not found", script_id)
-        return False
+        return self._repo.save_script_analysis(script_id, result)
 
     def remove_script(self, script_id: str) -> bool:
         """Remove a script by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        original_len = len(self.current_project.scripts)
-        self.current_project.scripts = [
-            s for s in self.current_project.scripts if s.id != script_id
-        ]
-        if len(self.current_project.scripts) < original_len:
-            self.save()
-            logger.info("AppState.remove_script: removed id={!r}", script_id)
-            return True
-        logger.warning("AppState.remove_script: id={!r} not found", script_id)
-        return False
+        return self._repo.remove_script(script_id)
 
-    # --- Fact management ---
+    # ------------------------------------------------------------------
+    # Fact management
+    # ------------------------------------------------------------------
 
     def add_fact(
         self,
@@ -327,127 +255,41 @@ class AppState:
         source_script_ids: list[str] | None = None,
     ) -> Fact:
         """Add a fact to the current project."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        fact = Fact(
+        return self._repo.add_fact(
             character_id=character_id,
             location_id=location_id,
             time_slot=time_slot,
             source_type=source_type,
             source_evidence=source_evidence,
-            source_script_ids=source_script_ids or [],
+            source_script_ids=source_script_ids,
         )
-        self.current_project.facts.append(fact)
-        self._fact_index.add((character_id, location_id, time_slot))
-        self.save()
-        logger.info(
-            "AppState.add_fact: char={!r} loc={!r} ts={!r} source={}",
-            character_id,
-            location_id,
-            time_slot,
-            source_type,
-        )
-        return fact
 
     def remove_fact(self, fact_id: str) -> bool:
         """Remove a fact by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        removed_fact = None
-        for f in self.current_project.facts:
-            if f.id == fact_id:
-                removed_fact = f
-                break
-        if removed_fact is None:
-            logger.warning("AppState.remove_fact: id={!r} not found", fact_id)
-            return False
-        self.current_project.facts = [f for f in self.current_project.facts if f.id != fact_id]
-        self._fact_index.discard(
-            (removed_fact.character_id, removed_fact.location_id, removed_fact.time_slot)
-        )
-        self.save()
-        logger.info("AppState.remove_fact: removed id={!r}", fact_id)
-        return True
+        return self._repo.remove_fact(fact_id)
 
-    # --- Time slot management ---
+    # ------------------------------------------------------------------
+    # Time slot management
+    # ------------------------------------------------------------------
 
     def add_time_slot(self, time_slot: str, description: str = "") -> TimeSlot | None:
         """Add a time slot. Validates HH:MM format. Returns TimeSlot if added, None if duplicate."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        if not re.match(r"^\d{2}:\d{2}$", time_slot):
-            raise ValueError(f"时间格式必须为 HH:MM，收到: '{time_slot}'")
-        # Check for duplicate: same label AND same description
-        for ts in self.current_project.time_slots:
-            if ts.label == time_slot and ts.description == description:
-                logger.debug(
-                    "AppState.add_time_slot: {!r} (desc={!r}) already exists, skipped",
-                    time_slot,
-                    description,
-                )
-                return None
-        # Determine next sort_order
-        max_order = max((ts.sort_order for ts in self.current_project.time_slots), default=-1)
-        new_ts = TimeSlot(label=time_slot, description=description, sort_order=max_order + 1)
-        self.current_project.time_slots.append(new_ts)
-        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
-        self.save()
-        logger.info(
-            "AppState.add_time_slot: added {!r} (id={}, desc={!r})",
-            time_slot,
-            new_ts.id,
-            description,
-        )
-        return new_ts
+        return self._repo.add_time_slot(time_slot, description)
 
     def remove_time_slot(self, time_slot_id: str) -> bool:
         """Remove a time slot by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        original_len = len(self.current_project.time_slots)
-        self.current_project.time_slots = [
-            ts for ts in self.current_project.time_slots if ts.id != time_slot_id
-        ]
-        if len(self.current_project.time_slots) < original_len:
-            self.save()
-            logger.info("AppState.remove_time_slot: removed id={!r}", time_slot_id)
-            return True
-        logger.warning("AppState.remove_time_slot: id={!r} not found", time_slot_id)
-        return False
+        return self._repo.remove_time_slot(time_slot_id)
 
     def reorder_time_slot(self, time_slot_id: str, direction: int) -> bool:
         """Move a time slot up (direction=-1) or down (direction=1) in sort order.
 
         Returns True if the time slot was moved, False otherwise.
         """
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        slots = sorted(self.current_project.time_slots, key=lambda ts: ts.sort_order)
-        idx = next((i for i, ts in enumerate(slots) if ts.id == time_slot_id), None)
-        if idx is None:
-            logger.warning("AppState.reorder_time_slot: id={!r} not found", time_slot_id)
-            return False
-        swap_idx = idx + direction
-        if swap_idx < 0 or swap_idx >= len(slots):
-            logger.debug("AppState.reorder_time_slot: id={!r} already at boundary", time_slot_id)
-            return False
-        # Swap sort_order values
-        slots[idx].sort_order, slots[swap_idx].sort_order = (
-            slots[swap_idx].sort_order,
-            slots[idx].sort_order,
-        )
-        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
-        self.save()
-        logger.info(
-            "AppState.reorder_time_slot: moved id={!r} direction={}", time_slot_id, direction
-        )
-        return True
+        return self._repo.reorder_time_slot(time_slot_id, direction)
 
     def get_time_slot_by_id(self, ts_id: str) -> TimeSlot | None:
         """Look up a time slot by ID. Returns None if not found."""
-        if not self.current_project:
-            return None
-        return next((ts for ts in self.current_project.time_slots if ts.id == ts_id), None)
+        return self._repo.get_time_slot_by_id(ts_id)
 
     def get_time_slot_label(self, ts_id: str) -> str:
         """Return display label for a time slot ID.
@@ -455,14 +297,11 @@ class AppState:
         Returns 'label (description)' if description is non-empty,
         otherwise just 'label'. Falls back to raw ID if not found.
         """
-        ts = self.get_time_slot_by_id(ts_id)
-        if ts is None:
-            return ts_id
-        if ts.description:
-            return f"{ts.label} ({ts.description})"
-        return ts.label
+        return self._repo.get_time_slot_label(ts_id)
 
-    # --- Hint management ---
+    # ------------------------------------------------------------------
+    # Hint management
+    # ------------------------------------------------------------------
 
     def add_hint(
         self,
@@ -470,55 +309,27 @@ class AppState:
         content: str,
     ) -> Hint:
         """Add a hint/rule/constraint to the current project."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        hint = Hint(type=hint_type, content=content)
-        self.current_project.hints.append(hint)
-        self.save()
-        logger.info("AppState.add_hint: type={} content={!r:.60}", hint_type, content)
-        return hint
+        return self._repo.add_hint(hint_type, content)
 
     def remove_hint(self, hint_id: str) -> bool:
         """Remove a hint by ID. Returns True if found and removed."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        original_len = len(self.current_project.hints)
-        self.current_project.hints = [h for h in self.current_project.hints if h.id != hint_id]
-        if len(self.current_project.hints) < original_len:
-            self.save()
-            logger.info("AppState.remove_hint: removed id={!r}", hint_id)
-            return True
-        logger.warning("AppState.remove_hint: id={!r} not found", hint_id)
-        return False
+        return self._repo.remove_hint(hint_id)
 
-    # --- Ignored entity management ---
+    # ------------------------------------------------------------------
+    # Ignored entity management
+    # ------------------------------------------------------------------
 
     def ignore_entity(self, kind: EntityKind, name: str) -> IgnoredEntity:
         """Permanently ignore a raw entity name so it won't be suggested again."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        name = name.strip()
-        # Deduplicate
-        for ie in self.current_project.ignored_entities:
-            if ie.kind == kind and ie.name.lower() == name.lower():
-                return ie
-        entry = IgnoredEntity(kind=kind, name=name)
-        self.current_project.ignored_entities.append(entry)
-        self.save()
-        logger.info("AppState.ignore_entity: kind={} name={!r}", kind, name)
-        return entry
+        return self._repo.ignore_entity(kind, name)
 
     def is_entity_ignored(self, kind: EntityKind, name: str) -> bool:
         """Return True if this raw name has been ignored for the given kind."""
-        if not self.current_project:
-            return False
-        name_lower = name.strip().lower()
-        return any(
-            ie.kind == kind and ie.name.lower() == name_lower
-            for ie in self.current_project.ignored_entities
-        )
+        return self._repo.is_entity_ignored(kind, name)
 
-    # --- Entity merge ---
+    # ------------------------------------------------------------------
+    # Entity merge
+    # ------------------------------------------------------------------
 
     def merge_character(self, source_name: str, target_id: str) -> Character | None:
         """Merge source_name into an existing character by adding it as an alias.
@@ -526,42 +337,18 @@ class AppState:
         Does not create a new character — the source name becomes an alias of target.
         Returns the updated target character.
         """
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        target = next((c for c in self.current_project.characters if c.id == target_id), None)
-        if not target:
-            logger.warning("AppState.merge_character: target id={!r} not found", target_id)
-            return None
-        source_name = source_name.strip()
-        if source_name.lower() != target.name.lower() and source_name not in target.aliases:
-            target.aliases.append(source_name)
-        self.save()
-        logger.info(
-            "AppState.merge_character: {!r} → {!r} (id={})", source_name, target.name, target_id
-        )
-        return target
+        return self._repo.merge_character(source_name, target_id)
 
     def merge_location(self, source_name: str, target_id: str) -> Location | None:
         """Merge source_name into an existing location by adding it as an alias.
 
         Returns the updated target location.
         """
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        target = next((lo for lo in self.current_project.locations if lo.id == target_id), None)
-        if not target:
-            logger.warning("AppState.merge_location: target id={!r} not found", target_id)
-            return None
-        source_name = source_name.strip()
-        if source_name.lower() != target.name.lower() and source_name not in target.aliases:
-            target.aliases.append(source_name)
-        self.save()
-        logger.info(
-            "AppState.merge_location: {!r} → {!r} (id={})", source_name, target.name, target_id
-        )
-        return target
+        return self._repo.merge_location(source_name, target_id)
 
-    # --- Deduction management ---
+    # ------------------------------------------------------------------
+    # Deduction management
+    # ------------------------------------------------------------------
 
     def add_deduction(self, deduction: Deduction) -> bool:
         """Add a pending deduction to the current project.
@@ -572,124 +359,23 @@ class AppState:
         Returns:
             True if the deduction was added, False if it was skipped as a duplicate.
         """
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        triple = (deduction.character_id, deduction.location_id, deduction.time_slot)
-        # Check all three indexes for duplicates
-        if (
-            triple in self._fact_index
-            or triple in self._pending_index
-            or triple in self._rejection_index
-        ):
-            logger.debug(
-                "AppState.add_deduction: skipping duplicate char={!r} loc={!r} ts={!r}",
-                deduction.character_id,
-                deduction.location_id,
-                deduction.time_slot,
-            )
-            return False
-        self.current_project.deductions.append(deduction)
-        self._pending_index.add(triple)
-        self.save()
-        logger.debug(
-            "AppState.add_deduction: char={!r} loc={!r} ts={!r} conf={}",
-            deduction.character_id,
-            deduction.location_id,
-            deduction.time_slot,
-            deduction.confidence,
-        )
-        return True
+        return self._repo.add_deduction(deduction)
 
     def accept_deduction(self, deduction_id: str) -> Fact | None:
         """Accept a deduction: create a Fact from it, mark it accepted."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        ded = next(
-            (d for d in self.current_project.deductions if d.id == deduction_id),
-            None,
-        )
-        if not ded:
-            logger.warning("AppState.accept_deduction: id={!r} not found", deduction_id)
-            return None
-        ded.status = DeductionStatus.accepted
-        ded.resolved_at = datetime.now()
-        fact = Fact(
-            character_id=ded.character_id,
-            location_id=ded.location_id,
-            time_slot=ded.time_slot,
-            source_type=SourceType.ai_deduction,
-            source_evidence=ded.reasoning,
-            source_script_ids=ded.supporting_script_ids,
-            from_deduction_id=ded.id,
-        )
-        self.current_project.facts.append(fact)
-        # Update indexes: remove from pending, add to fact
-        triple = (ded.character_id, ded.location_id, ded.time_slot)
-        self._pending_index.discard(triple)
-        self._fact_index.add(triple)
-        self.save()
-        logger.info(
-            "AppState.accept_deduction: id={!r} → fact char={!r} loc={!r} ts={!r}",
-            deduction_id,
-            ded.character_id,
-            ded.location_id,
-            ded.time_slot,
-        )
-        return fact
+        return self._repo.accept_deduction(deduction_id)
 
     def reject_deduction(self, deduction_id: str, reason: str = "") -> Rejection | None:
         """Reject a deduction: create a Rejection record, mark it rejected."""
-        if not self.current_project:
-            raise ValueError("No project loaded")
-        ded = next(
-            (d for d in self.current_project.deductions if d.id == deduction_id),
-            None,
-        )
-        if not ded:
-            logger.warning("AppState.reject_deduction: id={!r} not found", deduction_id)
-            return None
-        ded.status = DeductionStatus.rejected
-        ded.resolved_at = datetime.now()
-        rejection = Rejection(
-            character_id=ded.character_id,
-            location_id=ded.location_id,
-            time_slot=ded.time_slot,
-            reason=reason or "用户拒绝",
-            from_deduction_id=ded.id,
-        )
-        self.current_project.rejections.append(rejection)
-        # Update indexes: remove from pending, add to rejection
-        triple = (ded.character_id, ded.location_id, ded.time_slot)
-        self._pending_index.discard(triple)
-        self._rejection_index.add(triple)
-        self.save()
-        logger.info(
-            "AppState.reject_deduction: id={!r} reason={!r:.60}",
-            deduction_id,
-            reason,
-        )
-        return rejection
+        return self._repo.reject_deduction(deduction_id, reason)
 
     def get_pending_deductions(self) -> list[Deduction]:
         """Return list of pending deductions."""
-        if not self.current_project:
-            return []
-        return [d for d in self.current_project.deductions if d.status == DeductionStatus.pending]
+        return self._repo.get_pending_deductions()
 
     def clear_pending_deductions(self) -> int:
         """Remove all pending deductions. Returns count removed."""
-        if not self.current_project:
-            return 0
-        original_len = len(self.current_project.deductions)
-        self.current_project.deductions = [
-            d for d in self.current_project.deductions if d.status != DeductionStatus.pending
-        ]
-        removed = original_len - len(self.current_project.deductions)
-        if removed > 0:
-            self._pending_index.clear()
-            self.save()
-            logger.info("AppState.clear_pending_deductions: removed {}", removed)
-        return removed
+        return self._repo.clear_pending_deductions()
 
 
 # Module-level singleton instance
