@@ -77,7 +77,8 @@ class TestCreateDeductionsFromFacts:
         assert ded.status == DeductionStatus.pending
         assert ded.character_id == alice.id
         assert ded.location_id == lib.id
-        assert ded.time_slot == "14:00"
+        ts_map = {ts.label: ts for ts in proj.time_slots}
+        assert ded.time_slot == ts_map["14:00"].id
         assert ded.confidence == ConfidenceLevel.high
         assert "script-1" in ded.supporting_script_ids
 

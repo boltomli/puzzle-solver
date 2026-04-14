@@ -44,6 +44,7 @@ class TestCascadeDeduction:
     def test_single_location_remaining_for_character(self, three_by_three_project):
         """If 2 of 3 locations are taken by others at a time, remaining char gets last one."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # At 14:00: Bob is in 图书馆, Charlie is in 厨房
         proj.facts.extend(
             [
@@ -64,9 +65,10 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Alice must be in 花园 at 14:00
+        ts_id = ts_map["14:00"].id
         assert len(results) >= 1
         alice_14 = next(
-            (d for d in results if d.character_id == "c1" and d.time_slot == "14:00"),
+            (d for d in results if d.character_id == "c1" and d.time_slot == ts_id),
             None,
         )
         assert alice_14 is not None
@@ -77,6 +79,7 @@ class TestCascadeDeduction:
     def test_single_character_remaining_for_location(self, three_by_three_project):
         """If 2 of 3 characters are placed elsewhere at a time, remaining gets the location."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # At 15:00: Alice is in 图书馆, Bob is in 花园
         proj.facts.extend(
             [
@@ -97,8 +100,9 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Charlie must be in 厨房 at 15:00
+        ts_id = ts_map["15:00"].id
         charlie_15 = next(
-            (d for d in results if d.character_id == "c3" and d.time_slot == "15:00"),
+            (d for d in results if d.character_id == "c3" and d.time_slot == ts_id),
             None,
         )
         assert charlie_15 is not None
@@ -108,6 +112,7 @@ class TestCascadeDeduction:
     def test_rejection_enables_elimination(self, three_by_three_project):
         """Rejection + occupancy should enable elimination."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # At 14:00: Bob is in 图书馆
         proj.facts.append(
             Fact(
@@ -130,8 +135,9 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Alice: 图书馆 occupied by Bob, 厨房 rejected → must be 花园
+        ts_id = ts_map["14:00"].id
         alice_14 = next(
-            (d for d in results if d.character_id == "c1" and d.time_slot == "14:00"),
+            (d for d in results if d.character_id == "c1" and d.time_slot == ts_id),
             None,
         )
         assert alice_14 is not None
@@ -141,6 +147,7 @@ class TestCascadeDeduction:
     def test_no_duplicate_deductions(self, three_by_three_project):
         """Both strategies should not produce the same deduction twice."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # Fill enough to trigger both strategies for same cell
         proj.facts.extend(
             [
@@ -161,18 +168,20 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Alice at 花园 at 14:00 should appear exactly once
+        ts_id = ts_map["14:00"].id
         alice_14_deds = [
             d
             for d in results
             if d.character_id == "c1"
             and d.location_id == "l3"
-            and d.time_slot == "14:00"
+            and d.time_slot == ts_id
         ]
         assert len(alice_14_deds) == 1
 
     def test_already_filled_slots_skipped(self, three_by_three_project):
         """Slots with existing facts should not generate deductions."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # Fill all slots for 14:00
         proj.facts.extend(
             [
@@ -199,12 +208,14 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # No deductions for 14:00 since it's fully filled
+        ts_id = ts_map["14:00"].id
         for d in results:
-            assert d.time_slot != "14:00"
+            assert d.time_slot != ts_id
 
     def test_multiple_rejections(self, three_by_three_project):
         """Multiple rejections can narrow down to single option."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # At 14:00: reject Alice from 图书馆 and 厨房
         proj.rejections.extend(
             [
@@ -225,8 +236,9 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Alice must be at 花园 at 14:00
+        ts_id = ts_map["14:00"].id
         alice_14 = next(
-            (d for d in results if d.character_id == "c1" and d.time_slot == "14:00"),
+            (d for d in results if d.character_id == "c1" and d.time_slot == ts_id),
             None,
         )
         assert alice_14 is not None
@@ -235,6 +247,7 @@ class TestCascadeDeduction:
     def test_no_certain_when_multiple_possibilities(self, three_by_three_project):
         """If 2+ locations remain, no certain deduction should be made."""
         proj = three_by_three_project
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         # At 14:00: only Bob is placed, 2 locations remain for Alice
         proj.facts.append(
             Fact(
@@ -247,8 +260,9 @@ class TestCascadeDeduction:
         results = DeductionService.run_cascade(proj)
 
         # Alice still has 2 possibilities (厨房, 花园), should not get deduction
+        ts_id = ts_map["14:00"].id
         alice_14 = next(
-            (d for d in results if d.character_id == "c1" and d.time_slot == "14:00"),
+            (d for d in results if d.character_id == "c1" and d.time_slot == ts_id),
             None,
         )
         assert alice_14 is None
@@ -281,11 +295,13 @@ class TestCascadeDeduction:
                 ),
             ],
         )
+        ts_map = {ts.label: ts for ts in proj.time_slots}
         results = DeductionService.run_cascade(proj)
 
         # B must be at Y at 10:00 (only remaining location)
+        ts_id = ts_map["10:00"].id
         b_10 = next(
-            (d for d in results if d.character_id == "cb" and d.time_slot == "10:00"),
+            (d for d in results if d.character_id == "cb" and d.time_slot == ts_id),
             None,
         )
         assert b_10 is not None

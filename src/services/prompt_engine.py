@@ -4,8 +4,13 @@ Uses templates defined in the architecture doc to build structured prompts
 that include all project context: characters, locations, facts, rejections, scripts.
 """
 
-from src.models.puzzle import Project, Script
+from src.models.puzzle import Project, Script, TimeSlot
 from src.services.config import load_config
+
+
+def _format_ts(ts: TimeSlot) -> str:
+    """Format a TimeSlot for human-readable display in prompts."""
+    return f"{ts.label}({ts.description})" if ts.description else ts.label
 
 
 class PromptEngine:
@@ -96,7 +101,7 @@ class PromptEngine:
             parts.append(project.description)
 
         # Time slots
-        parts.append(f"\n## TIME SLOTS\n{', '.join(project.time_slots)}")
+        parts.append(f"\n## TIME SLOTS\n{', '.join(_format_ts(ts) for ts in project.time_slots)}")
 
         # Characters
         parts.append("\n## CHARACTERS")
@@ -121,6 +126,9 @@ class PromptEngine:
         for hint in project.hints:
             parts.append(f"- [{hint.type.value.upper()}] {hint.content}")
 
+        # Build ts_map for ID→TimeSlot lookup
+        ts_map = {ts.id: ts for ts in project.time_slots}
+
         # Confirmed facts
         parts.append("\n## CONFIRMED FACTS")
         for fact in project.facts:
@@ -128,7 +136,9 @@ class PromptEngine:
             loc = next((l for l in project.locations if l.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
-            parts.append(f"- ✅ **{char_name}** was at **{loc_name}** at **{fact.time_slot}**")
+            ts = ts_map.get(fact.time_slot)
+            ts_label = _format_ts(ts) if ts else fact.time_slot
+            parts.append(f"- ✅ **{char_name}** was at **{loc_name}** at **{ts_label}**")
 
         # Rejections
         parts.append("\n## REJECTED DEDUCTIONS (以下推断已被用户明确拒绝，绝对不要再次建议：)")
@@ -137,8 +147,10 @@ class PromptEngine:
             loc = next((l for l in project.locations if l.id == rej.location_id), None)
             char_name = char.name if char else rej.character_id
             loc_name = loc.name if loc else rej.location_id
+            ts = ts_map.get(rej.time_slot)
+            ts_label = _format_ts(ts) if ts else rej.time_slot
             parts.append(
-                f"- ❌ {char_name} was NOT at {loc_name} at {rej.time_slot} (reason: {rej.reason})"
+                f"- ❌ {char_name} was NOT at {loc_name} at {ts_label} (reason: {rej.reason})"
             )
 
         # Focus area section (when focus_filter is provided)
@@ -161,7 +173,15 @@ class PromptEngine:
                 if loc_names:
                     focus_lines.append(f"- 地点: {', '.join(loc_names)}")
             if filter_time_slots:
-                focus_lines.append(f"- 时间: {', '.join(filter_time_slots)}")
+                # Build reverse lookup: label→TimeSlot for back-compat
+                label_map = {ts.label: ts for ts in project.time_slots}
+                ts_labels = []
+                for tid in filter_time_slots:
+                    if tid in ts_map:
+                        ts_labels.append(_format_ts(ts_map[tid]))
+                    elif tid in label_map:
+                        ts_labels.append(_format_ts(label_map[tid]))
+                focus_lines.append(f"- 时间: {', '.join(ts_labels)}")
 
             if focus_lines:
                 parts.append("\n## 重点推断范围")
@@ -184,13 +204,13 @@ class PromptEngine:
                 continue
             for ts in project.time_slots:
                 # Skip time slot if focus filter specifies time slots and this one is not in it
-                if filter_time_slots_set and ts not in filter_time_slots_set:
+                if filter_time_slots_set and ts.id not in filter_time_slots_set and ts.label not in filter_time_slots_set:
                     continue
                 has_fact = any(
-                    f.character_id == char.id and f.time_slot == ts for f in project.facts
+                    f.character_id == char.id and f.time_slot in (ts.id, ts.label) for f in project.facts
                 )
                 if not has_fact:
-                    parts.append(f"- {char.name} at {ts}: ???")
+                    parts.append(f"- {char.name} at {_format_ts(ts)}: ???")
 
         # Scripts
         parts.append("\n## SCRIPT EVIDENCE")
@@ -203,6 +223,9 @@ class PromptEngine:
                 parts.append(f"Stated time: {script.metadata.stated_time}")
             if script.metadata.stated_location:
                 parts.append(f"Stated location: {script.metadata.stated_location}")
+            notes_text = script.metadata.user_notes or script.title or ""
+            if notes_text:
+                parts.append(f"Notes: {notes_text}")
             parts.append(f"\n```\n{script.raw_text}\n```")
 
         # Task instruction
@@ -216,7 +239,7 @@ class PromptEngine:
             '    {\n'
             '      "character_id": "<uuid>",\n'
             '      "location_id": "<uuid>",\n'
-            '      "time_slot": "HH:MM",\n'
+            '      "time_slot": "time slot label",\n'
             '      "confidence": "certain|high|medium|low",\n'
             '      "reasoning": "Step-by-step explanation",\n'
             '      "supporting_script_ids": ["<uuid>"],\n'
@@ -264,16 +287,19 @@ class PromptEngine:
             parts.append(line)
 
         # Known time slots
-        parts.append(f"\n### Known Time Slots\n{', '.join(project.time_slots)}")
+        parts.append(f"\n### Known Time Slots\n{', '.join(_format_ts(ts) for ts in project.time_slots)}")
 
         # Confirmed facts
+        ts_map = {ts.id: ts for ts in project.time_slots}
         parts.append("\n### Confirmed Facts")
         for fact in project.facts:
             char = next((c for c in project.characters if c.id == fact.character_id), None)
             loc = next((l for l in project.locations if l.id == fact.location_id), None)
             char_name = char.name if char else fact.character_id
             loc_name = loc.name if loc else fact.location_id
-            parts.append(f"- {char_name} was at {loc_name} at {fact.time_slot}")
+            ts = ts_map.get(fact.time_slot)
+            ts_label = _format_ts(ts) if ts else fact.time_slot
+            parts.append(f"- {char_name} was at {loc_name} at {ts_label}")
 
         # Game rules & hints
         parts.append("\n### Game Rules & Hints")
@@ -289,10 +315,18 @@ class PromptEngine:
                     f'\n#### Script: "{other.title or "Untitled"}" '
                     f"(#{other.metadata.source_order or '?'})"
                 )
+                notes_text = other.metadata.user_notes or other.title or ""
+                if notes_text:
+                    parts.append(f"Notes: {notes_text}")
                 parts.append(f"```\n{other.raw_text}\n```")
 
         # New script text
-        parts.append(f"\n### New Script Text\n```\n{script.raw_text}\n```")
+        notes_text = script.metadata.user_notes or script.title or ""
+        if notes_text:
+            parts.append(f"\n### New Script Text\nNotes: {notes_text}")
+        else:
+            parts.append("\n### New Script Text")
+        parts.append(f"```\n{script.raw_text}\n```")
 
         # Response format
         parts.append('\nAnalyze this script and respond with ONLY this JSON:')
@@ -317,7 +351,7 @@ class PromptEngine:
             '  ],\n'
             '  "time_references": [\n'
             '    {\n'
-            '      "time_slot": "HH:MM or null",\n'
+            '      "time_slot": "time slot label or null",\n'
             '      "reference_text": "The text that indicates this time",\n'
             '      "is_explicit": true\n'
             '    }\n'
@@ -326,7 +360,7 @@ class PromptEngine:
             '    {\n'
             '      "character_name": "string",\n'
             '      "location_name": "string",\n'
-            '      "time_slot": "HH:MM",\n'
+            '      "time_slot": "time slot label",\n'
             '      "confidence": "certain|high|medium|low",\n'
             '      "evidence": "Quote or explanation from the script"\n'
             '    }\n'

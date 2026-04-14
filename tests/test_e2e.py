@@ -112,15 +112,16 @@ class TestCoreE2EFlow:
         assert state.current_project.characters[0].name == "Emma"
         assert len(state.current_project.locations) == 1
         assert state.current_project.locations[0].name == "草坪"
-        assert "15:00" in state.current_project.time_slots
+        assert any(ts.label == "15:00" for ts in state.current_project.time_slots)
 
         # Step 5: Add fact from analysis direct_facts
         emma = state.current_project.characters[0]
         lawn = state.current_project.locations[0]
+        ts_15 = next(ts for ts in state.current_project.time_slots if ts.label == "15:00")
         fact = state.add_fact(
             character_id=emma.id,
             location_id=lawn.id,
-            time_slot="15:00",
+            time_slot=ts_15.id,
             source_type=SourceType.script_explicit,
             source_evidence="15:00，Emma 坐在草坪上",
         )
@@ -132,8 +133,8 @@ class TestCoreE2EFlow:
         assert len(rows) == 1
         emma_row = rows[0]
         assert emma_row["character"] == "Emma"
-        assert emma_row["15:00"] == "草坪"
-        assert emma_row["15:00_status"] == "confirmed"
+        assert emma_row[ts_15.id] == "草坪"
+        assert emma_row[f"{ts_15.id}_status"] == "confirmed"
 
     def test_script_analysis_to_deduction_flow(self, state, mock_analysis_result):
         """Test creating deductions from analysis using _create_single_deduction."""
@@ -210,15 +211,16 @@ class TestCascadeE2E:
         proj = s.current_project
         emma, alice, bob = proj.characters
         lawn, lib, kitchen = proj.locations
+        ts_map = {ts.label: ts for ts in proj.time_slots}
 
         # Place Emma→草坪 and Alice→图书馆 at 14:00
-        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
-        s.add_fact(character_id=alice.id, location_id=lib.id, time_slot="14:00")
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot=ts_map["14:00"].id)
+        s.add_fact(character_id=alice.id, location_id=lib.id, time_slot=ts_map["14:00"].id)
 
         # Cascade should deduce Bob→厨房 at 14:00
         new_deds = DeductionService.run_cascade(proj)
         bob_14 = next(
-            (d for d in new_deds if d.character_id == bob.id and d.time_slot == "14:00"),
+            (d for d in new_deds if d.character_id == bob.id and d.time_slot == ts_map["14:00"].id),
             None,
         )
         assert bob_14 is not None
@@ -231,11 +233,13 @@ class TestCascadeE2E:
         proj = s.current_project
         emma = proj.characters[0]
         lawn = proj.locations[0]
+        ts_map = {ts.label: ts for ts in proj.time_slots}
 
-        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot=ts_map["14:00"].id)
         new_deds = DeductionService.run_cascade(proj)
         # Alice and Bob both have 2 remaining locations — no cascade
-        deds_14 = [d for d in new_deds if d.time_slot == "14:00"]
+        ts_id = ts_map["14:00"].id
+        deds_14 = [d for d in new_deds if d.time_slot == ts_id]
         assert len(deds_14) == 0
 
 
@@ -246,11 +250,12 @@ class TestAcceptRejectE2E:
         proj = s.current_project
         emma = proj.characters[0]
         lawn = proj.locations[0]
+        ts_map = {ts.label: ts for ts in proj.time_slots}
 
         ded = Deduction(
             character_id=emma.id,
             location_id=lawn.id,
-            time_slot="15:00",
+            time_slot=ts_map["15:00"].id,
             confidence=ConfidenceLevel.high,
             reasoning="测试推断",
         )
@@ -261,7 +266,7 @@ class TestAcceptRejectE2E:
         assert fact is not None
         assert fact.character_id == emma.id
         assert fact.location_id == lawn.id
-        assert fact.time_slot == "15:00"
+        assert fact.time_slot == ts_map["15:00"].id
         assert fact.source_type == SourceType.ai_deduction
         assert len(s.get_pending_deductions()) == 0
         assert ded.status == DeductionStatus.accepted
@@ -272,11 +277,12 @@ class TestAcceptRejectE2E:
         proj = s.current_project
         emma = proj.characters[0]
         lawn = proj.locations[0]
+        ts_map = {ts.label: ts for ts in proj.time_slots}
 
         ded = Deduction(
             character_id=emma.id,
             location_id=lawn.id,
-            time_slot="15:00",
+            time_slot=ts_map["15:00"].id,
             confidence=ConfidenceLevel.medium,
             reasoning="可疑推断",
         )
@@ -294,15 +300,16 @@ class TestAcceptRejectE2E:
         proj = s.current_project
         emma, alice, bob = proj.characters
         lawn, lib, kitchen = proj.locations
+        ts_map = {ts.label: ts for ts in proj.time_slots}
 
         # Place Emma→草坪 at 14:00 as fact
-        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot="14:00")
+        s.add_fact(character_id=emma.id, location_id=lawn.id, time_slot=ts_map["14:00"].id)
 
         # Create and accept deduction: Alice→图书馆 at 14:00
         ded = Deduction(
             character_id=alice.id,
             location_id=lib.id,
-            time_slot="14:00",
+            time_slot=ts_map["14:00"].id,
             confidence=ConfidenceLevel.high,
             reasoning="AI推断",
         )
@@ -313,7 +320,7 @@ class TestAcceptRejectE2E:
         # Now cascade: Bob must be in 厨房 at 14:00
         cascade_deds = DeductionService.run_cascade(proj)
         bob_14 = next(
-            (d for d in cascade_deds if d.character_id == bob.id and d.time_slot == "14:00"),
+            (d for d in cascade_deds if d.character_id == bob.id and d.time_slot == ts_map["14:00"].id),
             None,
         )
         assert bob_14 is not None
@@ -381,25 +388,27 @@ class TestLocationCRUDE2E:
 
 class TestTimeSlotE2E:
     def test_time_slot_add_sort_remove(self, state):
-        """Time slots should auto-sort and prevent duplicates."""
+        """Time slots should have sort_order and prevent duplicates."""
         state.create_project(name="时间测试")
 
-        state.add_time_slot("16:00")
-        state.add_time_slot("14:00")
-        state.add_time_slot("15:00")
-        assert state.current_project.time_slots == ["14:00", "15:00", "16:00"]
+        ts1 = state.add_time_slot("16:00")
+        ts2 = state.add_time_slot("14:00")
+        ts3 = state.add_time_slot("15:00")
+        labels = [ts.label for ts in state.current_project.time_slots]
+        assert labels == ["16:00", "14:00", "15:00"]
 
         # Duplicate
         added = state.add_time_slot("14:00")
-        assert added is False
+        assert added is None
 
         # Invalid format
         with pytest.raises(ValueError, match="HH:MM"):
             state.add_time_slot("9am")
 
         # Remove
-        state.remove_time_slot("15:00")
-        assert state.current_project.time_slots == ["14:00", "16:00"]
+        state.remove_time_slot(ts2.id)
+        labels = [ts.label for ts in state.current_project.time_slots]
+        assert labels == ["16:00", "15:00"]
 
 
 class TestHintE2E:
@@ -425,11 +434,12 @@ class TestManualFactE2E:
         state.create_project(name="事实测试", time_slots=["14:00", "15:00"])
         char = state.add_character(name="Emma")
         loc = state.add_location(name="草坪")
+        ts_map = {ts.label: ts for ts in state.current_project.time_slots}
 
         fact = state.add_fact(
             character_id=char.id,
             location_id=loc.id,
-            time_slot="14:00",
+            time_slot=ts_map["14:00"].id,
             source_type=SourceType.user_input,
             source_evidence="手动观察",
         )
@@ -440,8 +450,9 @@ class TestManualFactE2E:
         # Verify in matrix
         from src.ui.pages.matrix import build_matrix_data
         rows = build_matrix_data(state.current_project)
-        assert rows[0]["14:00"] == "草坪"
-        assert rows[0]["14:00_status"] == "confirmed"
+        ts_id = ts_map["14:00"].id
+        assert rows[0][ts_id] == "草坪"
+        assert rows[0][f"{ts_id}_status"] == "confirmed"
 
         # Delete
         removed = state.remove_fact(fact.id)
@@ -450,5 +461,5 @@ class TestManualFactE2E:
 
         # Matrix should now be empty
         rows = build_matrix_data(state.current_project)
-        assert rows[0]["14:00"] == ""
-        assert rows[0]["14:00_status"] == "unknown"
+        assert rows[0][ts_id] == ""
+        assert rows[0][f"{ts_id}_status"] == "unknown"

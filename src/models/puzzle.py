@@ -7,15 +7,10 @@ Core concept: a 3D assignment puzzle — Character × Location × Time.
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Any, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
-
-
-# --- Custom Types ---
-
-TimeSlot = Annotated[str, Field(pattern=r"^\d{2}:\d{2}$", description="Time slot in HH:MM format")]
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # --- Enums ---
@@ -98,6 +93,21 @@ class Location(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
+class TimeSlot(BaseModel):
+    """A time slot in the mystery game with unique ID."""
+    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    label: str  # HH:MM format, e.g., "16:00"
+    description: str = ""  # Optional context, e.g., "第一天", "Day 2"
+    sort_order: int = 0  # For manual reordering
+
+    @field_validator("label")
+    @classmethod
+    def validate_label(cls, v: str) -> str:
+        if not re.match(r"^\d{2}:\d{2}$", v):
+            raise ValueError(f"Time slot label must be HH:MM format, got {v!r}")
+        return v
+
+
 class Script(BaseModel):
     """A script/scene entry with raw text from the game."""
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -113,19 +123,12 @@ class Fact(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
-    time_slot: str
+    time_slot: str  # TimeSlot ID reference
     source_type: SourceType
     source_evidence: Optional[str] = None
     source_script_ids: list[str] = Field(default_factory=list)
     from_deduction_id: Optional[str] = None
     confirmed_at: datetime = Field(default_factory=datetime.now)
-
-    @field_validator("time_slot")
-    @classmethod
-    def validate_time_slot(cls, v: str) -> str:
-        if not re.match(r"^\d{2}:\d{2}$", v):
-            raise ValueError(f"time_slot must be in HH:MM format, got '{v}'")
-        return v
 
 
 class Rejection(BaseModel):
@@ -133,17 +136,10 @@ class Rejection(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
-    time_slot: str
+    time_slot: str  # TimeSlot ID reference
     reason: str
     from_deduction_id: Optional[str] = None
     rejected_at: datetime = Field(default_factory=datetime.now)
-
-    @field_validator("time_slot")
-    @classmethod
-    def validate_time_slot(cls, v: str) -> str:
-        if not re.match(r"^\d{2}:\d{2}$", v):
-            raise ValueError(f"time_slot must be in HH:MM format, got '{v}'")
-        return v
 
 
 class Deduction(BaseModel):
@@ -151,7 +147,7 @@ class Deduction(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     character_id: str
     location_id: str
-    time_slot: str
+    time_slot: str  # TimeSlot ID reference
     confidence: ConfidenceLevel
     reasoning: str
     supporting_script_ids: list[str] = Field(default_factory=list)
@@ -160,13 +156,6 @@ class Deduction(BaseModel):
     batch_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     resolved_at: Optional[datetime] = None
-
-    @field_validator("time_slot")
-    @classmethod
-    def validate_time_slot(cls, v: str) -> str:
-        if not re.match(r"^\d{2}:\d{2}$", v):
-            raise ValueError(f"time_slot must be in HH:MM format, got '{v}'")
-        return v
 
 
 class Hint(BaseModel):
@@ -185,7 +174,7 @@ class Project(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     description: Optional[str] = None
-    time_slots: list[str] = Field(default_factory=list)
+    time_slots: list[TimeSlot] = Field(default_factory=list)
     characters: list[Character] = Field(default_factory=list)
     locations: list[Location] = Field(default_factory=list)
     scripts: list[Script] = Field(default_factory=list)
@@ -196,13 +185,43 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    @field_validator("time_slots")
+    @model_validator(mode="before")
     @classmethod
-    def validate_time_slots(cls, v: list[str]) -> list[str]:
-        for ts in v:
-            if not re.match(r"^\d{2}:\d{2}$", ts):
-                raise ValueError(f"Each time_slot must be in HH:MM format, got '{ts}'")
-        return v
+    def _migrate_time_slots(cls, data: Any) -> Any:
+        """Migrate old string time_slots to TimeSlot objects."""
+        if isinstance(data, dict) and "time_slots" in data:
+            ts_list = data["time_slots"]
+            if ts_list and isinstance(ts_list[0], str):
+                label_to_id: dict[str, str] = {}
+                new_ts = []
+                for i, label in enumerate(ts_list):
+                    ts_id = uuid4().hex[:8]
+                    new_ts.append({"id": ts_id, "label": label, "sort_order": i})
+                    label_to_id[label] = ts_id
+                data["time_slots"] = new_ts
+                # Migrate references in facts, deductions, rejections
+                for item in data.get("facts", []):
+                    if isinstance(item, dict):
+                        old_val = item.get("time_slot", "")
+                        if old_val in label_to_id:
+                            item["time_slot"] = label_to_id[old_val]
+                    elif hasattr(item, "time_slot") and item.time_slot in label_to_id:
+                        item.time_slot = label_to_id[item.time_slot]
+                for item in data.get("deductions", []):
+                    if isinstance(item, dict):
+                        old_val = item.get("time_slot", "")
+                        if old_val in label_to_id:
+                            item["time_slot"] = label_to_id[old_val]
+                    elif hasattr(item, "time_slot") and item.time_slot in label_to_id:
+                        item.time_slot = label_to_id[item.time_slot]
+                for item in data.get("rejections", []):
+                    if isinstance(item, dict):
+                        old_val = item.get("time_slot", "")
+                        if old_val in label_to_id:
+                            item["time_slot"] = label_to_id[old_val]
+                    elif hasattr(item, "time_slot") and item.time_slot in label_to_id:
+                        item.time_slot = label_to_id[item.time_slot]
+        return data
 
 
 class ProjectSummary(BaseModel):

@@ -5,7 +5,7 @@ import tempfile
 import shutil
 from pathlib import Path
 
-from src.models.puzzle import CharacterStatus, HintType, SourceType
+from src.models.puzzle import CharacterStatus, ConfidenceLevel, Deduction, DeductionStatus, HintType, SourceType
 from src.storage.json_store import JsonStore
 from src.ui.state import AppState
 
@@ -215,13 +215,15 @@ class TestAppStateTimeSlots:
     def test_add_time_slot(self, state):
         state.create_project(name="Test")
         added = state.add_time_slot("14:00")
-        assert added is True
-        assert "14:00" in state.current_project.time_slots
+        assert added is not None
+        assert added.label == "14:00"
+        assert len(state.current_project.time_slots) == 1
+        assert state.current_project.time_slots[0].label == "14:00"
 
     def test_add_duplicate_time_slot(self, state):
         state.create_project(name="Test", time_slots=["14:00"])
         added = state.add_time_slot("14:00")
-        assert added is False
+        assert added is None
 
     def test_add_invalid_time_slot(self, state):
         state.create_project(name="Test")
@@ -230,17 +232,20 @@ class TestAppStateTimeSlots:
 
     def test_remove_time_slot(self, state):
         state.create_project(name="Test", time_slots=["14:00", "15:00"])
-        removed = state.remove_time_slot("14:00")
+        ts_to_remove = next(ts for ts in state.current_project.time_slots if ts.label == "14:00")
+        removed = state.remove_time_slot(ts_to_remove.id)
         assert removed is True
-        assert "14:00" not in state.current_project.time_slots
-        assert "15:00" in state.current_project.time_slots
+        labels = [ts.label for ts in state.current_project.time_slots]
+        assert "14:00" not in labels
+        assert "15:00" in labels
 
     def test_time_slots_sorted(self, state):
         state.create_project(name="Test")
         state.add_time_slot("16:00")
         state.add_time_slot("14:00")
         state.add_time_slot("15:00")
-        assert state.current_project.time_slots == ["14:00", "15:00", "16:00"]
+        labels = [ts.label for ts in state.current_project.time_slots]
+        assert labels == ["16:00", "14:00", "15:00"]
 
 
 class TestAppStateHints:
@@ -277,7 +282,12 @@ class TestDeductionIndex:
         loc = state.add_location(name="Library")
         return char, loc
 
-    def _make_deduction(self, char, loc, time_slot="14:00"):
+    def _get_ts_id(self, state, label):
+        """Helper to get time slot ID by label."""
+        ts = next(ts for ts in state.current_project.time_slots if ts.label == label)
+        return ts.id
+
+    def _make_deduction(self, char, loc, time_slot):
         """Helper to create a Deduction object."""
         from src.models.puzzle import Deduction, ConfidenceLevel, DeductionStatus
         return Deduction(
@@ -292,10 +302,11 @@ class TestDeductionIndex:
     def test_add_deduction_rejects_existing_fact(self, state):
         """add_deduction returns False when triple already exists as a confirmed Fact."""
         char, loc = self._setup_project(state)
+        ts_id = self._get_ts_id(state, "14:00")
         # Add a fact for the triple
-        state.add_fact(character_id=char.id, location_id=loc.id, time_slot="14:00")
+        state.add_fact(character_id=char.id, location_id=loc.id, time_slot=ts_id)
         # Try to add a deduction for same triple
-        ded = self._make_deduction(char, loc, "14:00")
+        ded = self._make_deduction(char, loc, ts_id)
         result = state.add_deduction(ded)
         assert result is False
         # The deduction should NOT be added
@@ -304,13 +315,14 @@ class TestDeductionIndex:
     def test_add_deduction_rejects_duplicate_pending(self, state):
         """add_deduction returns False when triple already exists as a pending Deduction."""
         char, loc = self._setup_project(state)
+        ts_id = self._get_ts_id(state, "14:00")
         # Add first deduction
-        ded1 = self._make_deduction(char, loc, "14:00")
+        ded1 = self._make_deduction(char, loc, ts_id)
         result1 = state.add_deduction(ded1)
         assert result1 is True
         assert len(state.current_project.deductions) == 1
         # Try to add same triple again
-        ded2 = self._make_deduction(char, loc, "14:00")
+        ded2 = self._make_deduction(char, loc, ts_id)
         result2 = state.add_deduction(ded2)
         assert result2 is False
         # Still only one deduction
@@ -319,20 +331,22 @@ class TestDeductionIndex:
     def test_add_deduction_rejects_rejected_triple(self, state):
         """add_deduction returns False when triple was previously Rejected."""
         char, loc = self._setup_project(state)
+        ts_id = self._get_ts_id(state, "14:00")
         # Add and reject a deduction
-        ded = self._make_deduction(char, loc, "14:00")
+        ded = self._make_deduction(char, loc, ts_id)
         state.add_deduction(ded)
         state.reject_deduction(ded.id, "Test rejection")
         assert len(state.current_project.rejections) == 1
         # Try to add same triple again
-        ded2 = self._make_deduction(char, loc, "14:00")
+        ded2 = self._make_deduction(char, loc, ts_id)
         result = state.add_deduction(ded2)
         assert result is False
 
     def test_add_deduction_accepts_new_triple(self, state):
         """add_deduction returns True and adds the deduction for a genuinely new triple."""
         char, loc = self._setup_project(state)
-        ded = self._make_deduction(char, loc, "14:00")
+        ts_id = self._get_ts_id(state, "14:00")
+        ded = self._make_deduction(char, loc, ts_id)
         result = state.add_deduction(ded)
         assert result is True
         assert len(state.current_project.deductions) == 1
@@ -341,42 +355,46 @@ class TestDeductionIndex:
     def test_accept_updates_fact_index(self, state):
         """Accepting a deduction moves triple from pending_index to fact_index."""
         char, loc = self._setup_project(state)
-        ded = self._make_deduction(char, loc, "14:00")
+        ts_id = self._get_ts_id(state, "14:00")
+        ded = self._make_deduction(char, loc, ts_id)
         state.add_deduction(ded)
         # Accept it
         fact = state.accept_deduction(ded.id)
         assert fact is not None
         # Triple should now be in fact_index
-        triple = (char.id, loc.id, "14:00")
+        triple = (char.id, loc.id, ts_id)
         assert triple in state._fact_index
         assert triple not in state._pending_index
         # Adding same triple again should return False
-        ded2 = self._make_deduction(char, loc, "14:00")
+        ded2 = self._make_deduction(char, loc, ts_id)
         result = state.add_deduction(ded2)
         assert result is False
 
     def test_reject_updates_rejection_index(self, state):
         """Rejecting a deduction moves triple from pending_index to rejection_index."""
         char, loc = self._setup_project(state)
-        ded = self._make_deduction(char, loc, "14:00")
+        ts_id = self._get_ts_id(state, "14:00")
+        ded = self._make_deduction(char, loc, ts_id)
         state.add_deduction(ded)
         # Reject it
         rejection = state.reject_deduction(ded.id, "Test reason")
         assert rejection is not None
         # Triple should now be in rejection_index
-        triple = (char.id, loc.id, "14:00")
+        triple = (char.id, loc.id, ts_id)
         assert triple in state._rejection_index
         assert triple not in state._pending_index
         # Adding same triple again should return False
-        ded2 = self._make_deduction(char, loc, "14:00")
+        ded2 = self._make_deduction(char, loc, ts_id)
         result = state.add_deduction(ded2)
         assert result is False
 
     def test_clear_pending_resets_pending_index(self, state):
         """clear_pending_deductions clears the pending index so triples can be re-added."""
         char, loc = self._setup_project(state)
-        ded1 = self._make_deduction(char, loc, "14:00")
-        ded2 = self._make_deduction(char, loc, "15:00")
+        ts_id_14 = self._get_ts_id(state, "14:00")
+        ts_id_15 = self._get_ts_id(state, "15:00")
+        ded1 = self._make_deduction(char, loc, ts_id_14)
+        ded2 = self._make_deduction(char, loc, ts_id_15)
         state.add_deduction(ded1)
         state.add_deduction(ded2)
         assert len(state.current_project.deductions) == 2
@@ -385,7 +403,7 @@ class TestDeductionIndex:
         assert removed == 2
         assert len(state._pending_index) == 0
         # Re-adding should now succeed
-        ded3 = self._make_deduction(char, loc, "14:00")
+        ded3 = self._make_deduction(char, loc, ts_id_14)
         result = state.add_deduction(ded3)
         assert result is True
         assert len(state.current_project.deductions) == 1
@@ -394,29 +412,19 @@ class TestDeductionIndex:
         """Indexes are correctly rebuilt when loading an existing project."""
         char, loc = self._setup_project(state)
         project_id = state.current_project.id
+        ts_id_14 = self._get_ts_id(state, "14:00")
+        ts_id_15 = self._get_ts_id(state, "15:00")
 
         # Add a fact, a pending deduction, and a rejection
-        state.add_fact(character_id=char.id, location_id=loc.id, time_slot="14:00")
-        ded_pending = self._make_deduction(char, loc, "15:00")
+        state.add_fact(character_id=char.id, location_id=loc.id, time_slot=ts_id_14)
+        ded_pending = self._make_deduction(char, loc, ts_id_15)
         state.add_deduction(ded_pending)
-        ded_rejected = self._make_deduction(char, loc, "15:00")
-        # We need a different time slot for rejection to be independent
-        from src.models.puzzle import Deduction, ConfidenceLevel, DeductionStatus
-        ded_to_reject = Deduction(
-            character_id=char.id,
-            location_id=loc.id,
-            time_slot="15:00",
-            confidence=ConfidenceLevel.low,
-            reasoning="Will be rejected",
-            status=DeductionStatus.pending,
-        )
-        # Clear and re-add to test a rejection scenario with a clean triple
-        # Let's use the existing ded_pending and reject it, and use another char for facts
+        # Create another character for rejection test
         char2 = state.add_character(name="Bob")
         ded_for_rejection = Deduction(
             character_id=char2.id,
             location_id=loc.id,
-            time_slot="14:00",
+            time_slot=ts_id_14,
             confidence=ConfidenceLevel.low,
             reasoning="Will be rejected",
             status=DeductionStatus.pending,
@@ -433,28 +441,28 @@ class TestDeductionIndex:
         state.load_project(project_id)
 
         # Now indexes should be rebuilt
-        # Fact triple (char.id, loc.id, "14:00") should be in fact_index
-        assert (char.id, loc.id, "14:00") in state._fact_index
-        # Pending triple (char.id, loc.id, "15:00") should be in pending_index
-        assert (char.id, loc.id, "15:00") in state._pending_index
-        # Rejection triple (char2.id, loc.id, "14:00") should be in rejection_index
-        assert (char2.id, loc.id, "14:00") in state._rejection_index
+        # Fact triple (char.id, loc.id, ts_id_14) should be in fact_index
+        assert (char.id, loc.id, ts_id_14) in state._fact_index
+        # Pending triple (char.id, loc.id, ts_id_15) should be in pending_index
+        assert (char.id, loc.id, ts_id_15) in state._pending_index
+        # Rejection triple (char2.id, loc.id, ts_id_14) should be in rejection_index
+        assert (char2.id, loc.id, ts_id_14) in state._rejection_index
 
         # Adding duplicates should fail
         ded_dup_fact = Deduction(
-            character_id=char.id, location_id=loc.id, time_slot="14:00",
+            character_id=char.id, location_id=loc.id, time_slot=ts_id_14,
             confidence=ConfidenceLevel.medium, reasoning="dup",
         )
         assert state.add_deduction(ded_dup_fact) is False
 
         ded_dup_pending = Deduction(
-            character_id=char.id, location_id=loc.id, time_slot="15:00",
+            character_id=char.id, location_id=loc.id, time_slot=ts_id_15,
             confidence=ConfidenceLevel.medium, reasoning="dup",
         )
         assert state.add_deduction(ded_dup_pending) is False
 
         ded_dup_rejection = Deduction(
-            character_id=char2.id, location_id=loc.id, time_slot="14:00",
+            character_id=char2.id, location_id=loc.id, time_slot=ts_id_14,
             confidence=ConfidenceLevel.medium, reasoning="dup",
         )
         assert state.add_deduction(ded_dup_rejection) is False

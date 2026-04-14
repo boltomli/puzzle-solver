@@ -24,6 +24,7 @@ from src.models.puzzle import (
     Script,
     ScriptMetadata,
     SourceType,
+    TimeSlot,
 )
 from src.storage.json_store import JsonStore
 
@@ -360,32 +361,82 @@ class AppState:
 
     # --- Time slot management ---
 
-    def add_time_slot(self, time_slot: str) -> bool:
-        """Add a time slot. Validates HH:MM format. Returns True if added."""
+    def add_time_slot(self, time_slot: str, description: str = "") -> TimeSlot | None:
+        """Add a time slot. Validates HH:MM format. Returns TimeSlot if added, None if duplicate."""
         if not self.current_project:
             raise ValueError("No project loaded")
         if not re.match(r"^\d{2}:\d{2}$", time_slot):
             raise ValueError(f"时间格式必须为 HH:MM，收到: '{time_slot}'")
-        if time_slot in self.current_project.time_slots:
-            logger.debug("AppState.add_time_slot: {!r} already exists, skipped", time_slot)
-            return False
-        self.current_project.time_slots.append(time_slot)
-        self.current_project.time_slots.sort()
+        # Check for duplicate: same label AND same description
+        for ts in self.current_project.time_slots:
+            if ts.label == time_slot and ts.description == description:
+                logger.debug("AppState.add_time_slot: {!r} (desc={!r}) already exists, skipped", time_slot, description)
+                return None
+        # Determine next sort_order
+        max_order = max((ts.sort_order for ts in self.current_project.time_slots), default=-1)
+        new_ts = TimeSlot(label=time_slot, description=description, sort_order=max_order + 1)
+        self.current_project.time_slots.append(new_ts)
+        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
         self.save()
-        logger.info("AppState.add_time_slot: added {!r}", time_slot)
-        return True
+        logger.info("AppState.add_time_slot: added {!r} (id={}, desc={!r})", time_slot, new_ts.id, description)
+        return new_ts
 
-    def remove_time_slot(self, time_slot: str) -> bool:
-        """Remove a time slot. Returns True if found and removed."""
+    def remove_time_slot(self, time_slot_id: str) -> bool:
+        """Remove a time slot by ID. Returns True if found and removed."""
         if not self.current_project:
             raise ValueError("No project loaded")
-        if time_slot in self.current_project.time_slots:
-            self.current_project.time_slots.remove(time_slot)
+        original_len = len(self.current_project.time_slots)
+        self.current_project.time_slots = [
+            ts for ts in self.current_project.time_slots if ts.id != time_slot_id
+        ]
+        if len(self.current_project.time_slots) < original_len:
             self.save()
-            logger.info("AppState.remove_time_slot: removed {!r}", time_slot)
+            logger.info("AppState.remove_time_slot: removed id={!r}", time_slot_id)
             return True
-        logger.warning("AppState.remove_time_slot: {!r} not found", time_slot)
+        logger.warning("AppState.remove_time_slot: id={!r} not found", time_slot_id)
         return False
+
+    def reorder_time_slot(self, time_slot_id: str, direction: int) -> bool:
+        """Move a time slot up (direction=-1) or down (direction=1) in sort order.
+
+        Returns True if the time slot was moved, False otherwise.
+        """
+        if not self.current_project:
+            raise ValueError("No project loaded")
+        slots = sorted(self.current_project.time_slots, key=lambda ts: ts.sort_order)
+        idx = next((i for i, ts in enumerate(slots) if ts.id == time_slot_id), None)
+        if idx is None:
+            logger.warning("AppState.reorder_time_slot: id={!r} not found", time_slot_id)
+            return False
+        swap_idx = idx + direction
+        if swap_idx < 0 or swap_idx >= len(slots):
+            logger.debug("AppState.reorder_time_slot: id={!r} already at boundary", time_slot_id)
+            return False
+        # Swap sort_order values
+        slots[idx].sort_order, slots[swap_idx].sort_order = slots[swap_idx].sort_order, slots[idx].sort_order
+        self.current_project.time_slots.sort(key=lambda ts: ts.sort_order)
+        self.save()
+        logger.info("AppState.reorder_time_slot: moved id={!r} direction={}", time_slot_id, direction)
+        return True
+
+    def get_time_slot_by_id(self, ts_id: str) -> TimeSlot | None:
+        """Look up a time slot by ID. Returns None if not found."""
+        if not self.current_project:
+            return None
+        return next((ts for ts in self.current_project.time_slots if ts.id == ts_id), None)
+
+    def get_time_slot_label(self, ts_id: str) -> str:
+        """Return display label for a time slot ID.
+
+        Returns 'label (description)' if description is non-empty,
+        otherwise just 'label'. Falls back to raw ID if not found.
+        """
+        ts = self.get_time_slot_by_id(ts_id)
+        if ts is None:
+            return ts_id
+        if ts.description:
+            return f"{ts.label} ({ts.description})"
+        return ts.label
 
     # --- Hint management ---
 

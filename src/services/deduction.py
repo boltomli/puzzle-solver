@@ -14,9 +14,15 @@ from src.models.puzzle import (
     Deduction,
     Project,
     Script,
+    TimeSlot,
 )
 from src.services.llm_service import LLMService
 from src.services.prompt_engine import PromptEngine
+
+
+def _matches_ts(value: str, ts: TimeSlot) -> bool:
+    """Check if a time_slot value matches a TimeSlot (by ID or label for back-compat)."""
+    return value == ts.id or value == ts.label
 
 
 def _extract_json(raw: str) -> dict:
@@ -187,7 +193,7 @@ class DeductionService:
         for char in project.characters:
             for ts in project.time_slots:
                 if any(
-                    f.character_id == char.id and f.time_slot == ts
+                    f.character_id == char.id and _matches_ts(f.time_slot, ts)
                     for f in project.facts
                 ):
                     continue
@@ -196,14 +202,14 @@ class DeductionService:
                 for loc in project.locations:
                     occupied = any(
                         f.location_id == loc.id
-                        and f.time_slot == ts
+                        and _matches_ts(f.time_slot, ts)
                         and f.character_id != char.id
                         for f in project.facts
                     )
                     rejected = any(
                         r.character_id == char.id
                         and r.location_id == loc.id
-                        and r.time_slot == ts
+                        and _matches_ts(r.time_slot, ts)
                         for r in project.rejections
                     )
                     if not occupied and not rejected:
@@ -213,23 +219,23 @@ class DeductionService:
                     ded = Deduction(
                         character_id=char.id,
                         location_id=possible[0].id,
-                        time_slot=ts,
+                        time_slot=ts.id,
                         confidence=ConfidenceLevel.certain,
                         reasoning=(
-                            f"消元法：在 {ts}，{char.name} 只剩一个可能的地点 "
+                            f"消元法：在 {ts.label}，{char.name} 只剩一个可能的地点 "
                             f"{possible[0].name}"
                         ),
                     )
                     new_deductions.append(ded)
                     logger.debug(
-                        "run_cascade: strategy1 {} @ {} → {}", char.name, ts, possible[0].name
+                        "run_cascade: strategy1 {} @ {} → {}", char.name, ts.label, possible[0].name
                     )
 
         # Strategy 2: For each unfilled location+time, check possible characters
         for loc in project.locations:
             for ts in project.time_slots:
                 if any(
-                    f.location_id == loc.id and f.time_slot == ts
+                    f.location_id == loc.id and _matches_ts(f.time_slot, ts)
                     for f in project.facts
                 ):
                     continue
@@ -238,14 +244,14 @@ class DeductionService:
                 for char in project.characters:
                     elsewhere = any(
                         f.character_id == char.id
-                        and f.time_slot == ts
+                        and _matches_ts(f.time_slot, ts)
                         and f.location_id != loc.id
                         for f in project.facts
                     )
                     rejected = any(
                         r.character_id == char.id
                         and r.location_id == loc.id
-                        and r.time_slot == ts
+                        and _matches_ts(r.time_slot, ts)
                         for r in project.rejections
                     )
                     if not elsewhere and not rejected:
@@ -255,24 +261,24 @@ class DeductionService:
                     already = any(
                         d.character_id == possible[0].id
                         and d.location_id == loc.id
-                        and d.time_slot == ts
+                        and _matches_ts(d.time_slot, ts)
                         for d in new_deductions
                     )
                     if not already:
                         ded = Deduction(
                             character_id=possible[0].id,
                             location_id=loc.id,
-                            time_slot=ts,
+                            time_slot=ts.id,
                             confidence=ConfidenceLevel.certain,
                             reasoning=(
-                                f"消元法：在 {ts}，{loc.name} 只有 "
+                                f"消元法：在 {ts.label}，{loc.name} 只有 "
                                 f"{possible[0].name} 可以在此"
                             ),
                         )
                         new_deductions.append(ded)
                         logger.debug(
                             "run_cascade: strategy2 {} @ {} → {}",
-                            possible[0].name, ts, loc.name,
+                            possible[0].name, ts.label, loc.name,
                         )
 
         logger.info("run_cascade: found {} new certain deduction(s)", len(new_deductions))

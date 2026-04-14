@@ -20,6 +20,7 @@ from src.models.puzzle import (
     Script,
     ScriptMetadata,
     SourceType,
+    TimeSlot,
 )
 
 
@@ -110,15 +111,6 @@ class TestFact:
         assert f.time_slot == "15:00"
         assert f.source_type == SourceType.script_explicit
 
-    def test_invalid_time_slot(self):
-        with pytest.raises(Exception):
-            Fact(
-                character_id="char-001",
-                location_id="loc-001",
-                time_slot="invalid",
-                source_type=SourceType.user_input,
-            )
-
     def test_json_roundtrip(self):
         f = Fact(
             character_id="c1",
@@ -141,16 +133,6 @@ class TestRejection:
             reason="Contradicted by script evidence",
         )
         assert r.reason == "Contradicted by script evidence"
-
-    def test_invalid_time_slot(self):
-        with pytest.raises(Exception):
-            Rejection(
-                character_id="c1",
-                location_id="l1",
-                time_slot="not-a-time",
-                reason="bad",
-            )
-
 
 class TestDeduction:
     def test_create(self):
@@ -255,7 +237,12 @@ class TestProject:
         assert project2.characters[0].name == "Alice"
         assert len(project2.locations) == 1
         assert len(project2.facts) == 1
-        assert project2.facts[0].time_slot == "14:00"
+        # time_slots are now TimeSlot objects after migration
+        assert project2.time_slots[0].label == "14:00"
+        assert project2.time_slots[1].label == "15:00"
+        assert project2.time_slots[2].label == "16:00"
+        # fact.time_slot is now the TimeSlot ID, not the label
+        assert project2.facts[0].time_slot == project2.time_slots[0].id
         assert project2.hints[0].type == HintType.rule
 
 
