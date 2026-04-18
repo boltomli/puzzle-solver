@@ -153,6 +153,40 @@ class DeductionService:
             logger.exception("run_focused_deduction: failed for project={!r}", project.name)
             raise
 
+    async def run_custom_deduction(
+        self,
+        project: Project,
+        custom_rules_text: str,
+        include_reasoning: bool,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> dict:
+        """Run custom AI deduction using only raw scripts and user-provided rules."""
+        logger.info(
+            "run_custom_deduction: project={!r} scripts={} custom_rules_len={} include_reasoning={}",
+            project.name,
+            len(project.scripts),
+            len(custom_rules_text),
+            include_reasoning,
+        )
+        system_prompt, user_prompt = self.prompt_engine.build_custom_deduction_prompt(
+            project,
+            custom_rules_text=custom_rules_text,
+            include_reasoning=include_reasoning,
+            ts_by_id=ts_by_id,
+        )
+        logger.debug("run_custom_deduction: prompt built (user_prompt_len={})", len(user_prompt))
+        try:
+            raw = await self.llm.chat(system_prompt, user_prompt)
+            result = _extract_json(raw)
+            logger.info(
+                "run_custom_deduction: got answers={}",
+                len(result.get("answers", [])),
+            )
+            return result
+        except Exception:
+            logger.exception("run_custom_deduction: failed for project={!r}", project.name)
+            raise
+
     async def analyze_script(
         self,
         project: Project,
