@@ -7,6 +7,7 @@ and tabbed navigation for the five app sections.
 import flet as ft
 from loguru import logger
 
+from src.ui.pages.custom import build_custom_tab
 from src.ui.pages.manage import build_manage_tab
 from src.ui.pages.matrix import build_matrix_tab
 from src.ui.pages.review import build_review_tab
@@ -100,6 +101,9 @@ def main(page: ft.Page):
     def review_content():
         return build_review_tab(page)
 
+    def custom_content():
+        return build_custom_tab(page)
+
     def settings_content():
         return build_settings_tab(page)
 
@@ -121,6 +125,7 @@ def main(page: ft.Page):
                     matrix_content=matrix_content,
                     manage_content=manage_content,
                     review_content=review_content,
+                    custom_content=custom_content,
                     settings_content=settings_content,
                 )
             )
@@ -256,6 +261,7 @@ def _build_project_view(
     matrix_content,
     manage_content,
     review_content,
+    custom_content,
     settings_content,
 ) -> ft.Control:
     """Build the tabbed project view with AppBar, Tabs, and TabBarView."""
@@ -288,6 +294,7 @@ def _build_project_view(
         matrix_content,
         manage_content,
         review_content,
+        custom_content,
         settings_content,
     ]
 
@@ -300,7 +307,7 @@ def _build_project_view(
 
     def on_tab_change(e):
         idx = e.control.selected_index
-        tab_names = ["剧本", "矩阵", "管理", "审查", "设置"]
+        tab_names = ["剧本", "矩阵", "管理", "审查", "自定义", "设置"]
         logger.debug(
             "app: tab changed → {} ({})", idx, tab_names[idx] if idx < len(tab_names) else "?"
         )
@@ -314,12 +321,13 @@ def _build_project_view(
             ft.Tab(label="矩阵", icon=ft.Icons.GRID_ON),
             ft.Tab(label="管理", icon=ft.Icons.PEOPLE),
             ft.Tab(label="审查", icon=ft.Icons.FACT_CHECK),
+            ft.Tab(label="自定义", icon=ft.Icons.PSYCHOLOGY_ALT),
             ft.Tab(label="设置", icon=ft.Icons.SETTINGS),
         ],
     )
 
     tabs_control = ft.Tabs(
-        length=5,
+        length=6,
         selected_index=0,
         on_change=on_tab_change,
         expand=True,

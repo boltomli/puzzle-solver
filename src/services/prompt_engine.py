@@ -91,6 +91,31 @@ class PromptEngine:
         user_prompt = self._build_user_prompt(project, focus_filter=focus_filter, ts_by_id=ts_by_id)
         return system_prompt, user_prompt
 
+    def build_custom_deduction_prompt(
+        self,
+        project: Project,
+        custom_rules_text: str,
+        include_reasoning: bool,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> tuple[str, str]:
+        """Build prompt for custom deduction using raw scripts plus rules."""
+        system_prompt = (
+            "你是剧本杀推理助手。"
+            "你只能基于用户提供的原始剧本文本、项目中的规则/提示/约束，以及额外自定义规则进行推理。"
+            "不要使用项目中已有事实、已拒绝推断或审查记录。"
+            "如果证据不足，请明确说明不确定。"
+            "请始终使用中文输出。"
+        )
+        if ts_by_id is None:
+            ts_by_id = _build_ts_by_id(project)
+        user_prompt = self._build_custom_user_prompt(
+            project,
+            custom_rules_text=custom_rules_text,
+            include_reasoning=include_reasoning,
+            ts_by_id=ts_by_id,
+        )
+        return system_prompt, user_prompt
+
     def build_script_analysis_prompt(
         self,
         project: Project,
@@ -412,4 +437,90 @@ class PromptEngine:
             "```"
         )
 
+        return "\n".join(parts)
+
+    def _build_custom_user_prompt(
+        self,
+        project: Project,
+        custom_rules_text: str,
+        include_reasoning: bool,
+        ts_by_id: dict[str, TimeSlot] | None = None,
+    ) -> str:
+        """Assemble user prompt for custom deduction mode."""
+        parts: list[str] = []
+
+        parts.append(f"## GAME: {project.name}")
+        if project.description:
+            parts.append(project.description)
+
+        parts.append("\n## AVAILABLE CHARACTERS")
+        for char in project.characters:
+            line = f"- {char.name} (ID: {char.id})"
+            if char.aliases:
+                line += f"；别名: {', '.join(char.aliases)}"
+            parts.append(line)
+
+        parts.append("\n## AVAILABLE LOCATIONS")
+        for loc in project.locations:
+            line = f"- {loc.name} (ID: {loc.id})"
+            if loc.aliases:
+                line += f"；别名: {', '.join(loc.aliases)}"
+            parts.append(line)
+
+        parts.append("\n## AVAILABLE TIME SLOTS")
+        for ts in project.time_slots:
+            parts.append(f"- {_format_ts(ts)} (ID: {ts.id})")
+
+        parts.append("\n## MANAGED RULES & HINTS")
+        if project.hints:
+            for hint in project.hints:
+                parts.append(f"- [{hint.type.value.upper()}] {hint.content}")
+        else:
+            parts.append("- （无）")
+
+        parts.append("\n## OPTIONAL CUSTOM RULES")
+        parts.append(custom_rules_text.strip() if custom_rules_text.strip() else "- （无）")
+
+        parts.append("\n## RAW SCRIPTS")
+        for script in project.scripts:
+            title = script.title or "Untitled"
+            parts.append(f'\n### Script: "{title}"')
+            if script.metadata.stated_time:
+                parts.append(f"Stated time: {script.metadata.stated_time}")
+            if script.metadata.stated_location:
+                parts.append(f"Stated location: {script.metadata.stated_location}")
+            if script.metadata.source_order is not None:
+                parts.append(f"Source order: {script.metadata.source_order}")
+            parts.append(f"\n```\n{script.raw_text}\n```")
+
+        parts.append("\n---\n## YOUR TASK")
+        parts.append("仅根据 RAW SCRIPTS、MANAGED RULES & HINTS、OPTIONAL CUSTOM RULES 进行推理。")
+        parts.append("不要引用或依赖项目中的已确认事实、已拒绝推断、审查记录。")
+        parts.append("输出若干条你认为可能有效的答案，答案应尽量映射到给定的人物、地点、时间段。")
+        parts.append("若无法可靠映射，可在 explanation 中说明。")
+        parts.append(f"include_reasoning = {str(include_reasoning).lower()}")
+        parts.append("请只返回 JSON，不要输出任何额外说明。格式如下：")
+        parts.append(
+            "```json\n"
+            "{\n"
+            '  "answers": [\n'
+            "    {\n"
+            '      "character_id": "<uuid or empty>",\n'
+            '      "location_id": "<uuid or empty>",\n'
+            '      "time_slot": "<time slot id/label or empty>",\n'
+            '      "confidence": "high|medium|low",\n'
+            '      "answer_text": "对可能答案的自然语言描述",\n'
+            '      "explanation": "精简解释；当 include_reasoning=false 时尽量留空或极短"\n'
+            "    }\n"
+            "  ],\n"
+            '  "new_characters_detected": [\n'
+            '    {"name": "string", "found_in_script_id": "<uuid>", "context": "string"}\n'
+            "  ],\n"
+            '  "new_locations_detected": [\n'
+            '    {"name": "string", "found_in_script_id": "<uuid>", "context": "string"}\n'
+            "  ],\n"
+            '  "summary": "整体结论，可为空"\n'
+            "}\n"
+            "```"
+        )
         return "\n".join(parts)

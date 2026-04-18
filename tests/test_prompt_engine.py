@@ -286,6 +286,28 @@ class TestScriptAnalysisPrompt:
         assert "图书馆" in user_prompt
         assert "14:00" in user_prompt
 
+
+class TestCustomDeductionPrompt:
+    def test_custom_prompt_uses_managed_rules_optional_custom_rules_and_scripts(
+        self, engine, sample_project
+    ):
+        system_prompt, user_prompt = engine.build_custom_deduction_prompt(
+            sample_project,
+            custom_rules_text="规则一：A 不能在 15:00 去厨房",
+            include_reasoning=True,
+        )
+        assert "项目中的规则/提示/约束，以及额外自定义规则" in system_prompt
+        assert "## MANAGED RULES & HINTS" in user_prompt
+        assert "每个人每个时间段只能在一个地点" in user_prompt
+        assert "## OPTIONAL CUSTOM RULES" in user_prompt
+        assert "规则一：A 不能在 15:00 去厨房" in user_prompt
+        assert "## RAW SCRIPTS" in user_prompt
+        assert "第一幕" in user_prompt
+        assert '"answers"' in user_prompt
+        assert '"new_characters_detected"' in user_prompt
+        assert '"new_locations_detected"' in user_prompt
+        assert "不要引用或依赖项目中的已确认事实" in user_prompt
+
     def test_script_analysis_contains_hints(self, engine, sample_project):
         """Script analysis prompt should include game rules and hints."""
         script = sample_project.scripts[0]

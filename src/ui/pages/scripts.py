@@ -302,6 +302,11 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ft.Colors.BLUE,
             )
 
+        for control in list(page.overlay):
+            if isinstance(control, ft.AlertDialog) and control.open:
+                control.open = False
+        page.update()
+
     controls.append(
         ft.Card(
             content=ft.Container(
