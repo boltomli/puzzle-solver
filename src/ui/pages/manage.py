@@ -205,7 +205,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             )
 
     return ft.ExpansionPanel(
-        expanded=False,
+        expanded=True,
         header=ft.ListTile(title=ft.Text("🕐 时间管理")),
         content=ft.Container(
             content=ft.Column(
@@ -718,10 +718,15 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
 
         return handler
 
-    def on_add_hint(e):
+    def show_hint_dialog(
+        title: str = "规则",
+        initial_type: str = "rule",
+        initial_content: str = "",
+        on_save=None,
+    ):
         type_dropdown = ft.Dropdown(
             label="类型",
-            value="rule",
+            value=initial_type,
             options=[
                 ft.dropdown.Option(key="rule", text="规则 (Rule)"),
                 ft.dropdown.Option(key="hint", text="提示 (Hint)"),
@@ -731,9 +736,11 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         )
         content_field = ft.TextField(
             label="内容 *",
+            value=initial_content,
             hint_text="例如：每个人每个时间段只能在一个地点",
             multiline=True,
             min_lines=3,
+            autofocus=True,
         )
         error_text = ft.Text("", color=ft.Colors.RED)
 
@@ -743,22 +750,17 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 error_text.value = "内容不能为空"
                 page.update()
                 return
-            logger.info("manage: add_hint type={!r}", type_dropdown.value)
-            app_state.add_hint(
-                hint_type=HintType(type_dropdown.value),
-                content=content,
-            )
-            show_snackbar("规则已添加", ft.Colors.GREEN)
+            if on_save:
+                on_save(type_dropdown.value, content)
             dlg.open = False
             page.update()
-            refresh()
 
         def do_cancel(e):
             dlg.open = False
             page.update()
 
         dlg = ft.AlertDialog(
-            title=ft.Text("添加规则"),
+            title=ft.Text(title),
             content=ft.Column(
                 controls=[type_dropdown, content_field, error_text],
                 tight=True,
@@ -772,6 +774,39 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         page.overlay.append(dlg)
         dlg.open = True
         page.update()
+
+    def on_add_hint(e):
+        def do_add(type_val, content):
+            logger.info("manage: add_hint type={!r}", type_val)
+            app_state.add_hint(
+                hint_type=HintType(type_val),
+                content=content,
+            )
+            show_snackbar("规则已添加", ft.Colors.GREEN)
+            refresh()
+
+        show_hint_dialog(title="添加规则", on_save=do_add)
+
+    def make_edit_handler(hint):
+        def handler(e):
+            def do_update(type_val, content):
+                logger.info("manage: update_hint id={!r} type={!r}", hint.id, type_val)
+                app_state.update_hint(
+                    hint.id,
+                    hint_type=HintType(type_val),
+                    content=content,
+                )
+                show_snackbar("规则已更新", ft.Colors.GREEN)
+                refresh()
+
+            show_hint_dialog(
+                title="编辑规则",
+                initial_type=hint.type.value,
+                initial_content=hint.content,
+                on_save=do_update,
+            )
+
+        return handler
 
     # Build hint cards
     hint_controls: list[ft.Control] = []
@@ -798,11 +833,21 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                                 spacing=10,
                                 expand=True,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
-                                icon_color=ft.Colors.RED,
-                                on_click=make_delete_handler(h),
-                                tooltip="删除",
+                            ft.Row(
+                                controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        on_click=make_edit_handler(h),
+                                        tooltip="编辑",
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE,
+                                        icon_color=ft.Colors.RED,
+                                        on_click=make_delete_handler(h),
+                                        tooltip="删除",
+                                    ),
+                                ],
+                                spacing=0,
                             ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -880,7 +925,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
         evidence_field = ft.TextField(
             label="证据/备注",
             hint_text="来源说明",
-            expand=True,
+            width=280,
         )
 
         def on_add_fact(e):

@@ -505,6 +505,24 @@ class JsonRepository:
         self.save()
         return hint
 
+    def update_hint(
+        self,
+        hint_id: str,
+        hint_type: HintType | None = None,
+        content: str | None = None,
+    ) -> bool:
+        """Update a hint's type and/or content. Returns True if found and updated."""
+        proj = self._require_project()
+        for h in proj.hints:
+            if h.id == hint_id:
+                if hint_type is not None:
+                    h.type = hint_type
+                if content is not None:
+                    h.content = content
+                self.save()
+                return True
+        return False
+
     def remove_hint(self, hint_id: str) -> bool:
         """Remove a hint by ID. Returns True if found and removed."""
         proj = self._require_project()

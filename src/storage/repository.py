@@ -192,6 +192,15 @@ class Repository(Protocol):
         """Add a hint/rule/constraint to the current project."""
         ...
 
+    def update_hint(
+        self,
+        hint_id: str,
+        hint_type: HintType | None = None,
+        content: str | None = None,
+    ) -> bool:
+        """Update a hint's type and/or content. Returns True if found and updated."""
+        ...
+
     def remove_hint(self, hint_id: str) -> bool:
         """Remove a hint by ID. Returns True if found and removed."""
         ...

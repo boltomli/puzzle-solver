@@ -329,6 +329,15 @@ class AppState:
         """Add a hint/rule/constraint to the current project."""
         return self._repo.add_hint(hint_type, content)
 
+    def update_hint(
+        self,
+        hint_id: str,
+        hint_type: HintType | None = None,
+        content: str | None = None,
+    ) -> bool:
+        """Update a hint's type and/or content. Returns True if found and updated."""
+        return self._repo.update_hint(hint_id, hint_type=hint_type, content=content)
+
     def remove_hint(self, hint_id: str) -> bool:
         """Remove a hint by ID. Returns True if found and removed."""
         return self._repo.remove_hint(hint_id)

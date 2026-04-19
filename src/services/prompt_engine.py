@@ -100,7 +100,14 @@ class PromptEngine:
     ) -> tuple[str, str]:
         """Build prompt for custom deduction using raw scripts plus rules."""
         system_prompt = (
-            "你是剧本杀推理助手。"
+            "你是剧本杀推理助手。\n"
+            "【最高优先级】用户提供的 OPTIONAL CUSTOM RULES（自定义规则/要求）是本次推理的最高指令，"
+            "优先级高于默认推理目标、输出偏好和项目中的 MANAGED RULES & HINTS。"
+            "你必须严格、完整、逐条地遵循用户的自定义规则去完成任务，"
+            "包括其中指定的推理目标、关注点、输出风格、答案形式与任何附加要求。\n"
+            "当自定义规则与默认行为冲突时，以自定义规则为准；"
+            "当自定义规则与 MANAGED RULES & HINTS 冲突时，仍以自定义规则为准，"
+            "但不得违反基本逻辑一致性。\n"
             "你只能基于用户提供的原始剧本文本、项目中的规则/提示/约束，以及额外自定义规则进行推理。"
             "不要使用项目中已有事实、已拒绝推断或审查记录。"
             "如果证据不足，请明确说明不确定。"
@@ -478,7 +485,12 @@ class PromptEngine:
         else:
             parts.append("- （无）")
 
-        parts.append("\n## OPTIONAL CUSTOM RULES")
+        parts.append("\n## OPTIONAL CUSTOM RULES（★最高优先级，必须严格遵循★）")
+        parts.append(
+            "以下为用户本次提供的自定义规则/要求，"
+            "请将其视为最高优先级指令，优先于默认行为与 MANAGED RULES & HINTS；"
+            "务必尽最大可能严格、逐条地按照这些要求完成任务："
+        )
         parts.append(custom_rules_text.strip() if custom_rules_text.strip() else "- （无）")
 
         parts.append("\n## RAW SCRIPTS")
@@ -494,6 +506,11 @@ class PromptEngine:
             parts.append(f"\n```\n{script.raw_text}\n```")
 
         parts.append("\n---\n## YOUR TASK")
+        parts.append(
+            "★ 首要原则：OPTIONAL CUSTOM RULES 中的用户自定义要求具有最高优先级，"
+            "请优先按照其中的指示去完成任务（包括推理目标、关注点、输出风格等）；"
+            "若与默认任务或 MANAGED RULES & HINTS 冲突，以自定义规则为准。"
+        )
         parts.append("仅根据 RAW SCRIPTS、MANAGED RULES & HINTS、OPTIONAL CUSTOM RULES 进行推理。")
         parts.append("不要引用或依赖项目中的已确认事实、已拒绝推断、审查记录。")
         parts.append("输出若干条你认为可能有效的答案，答案应尽量映射到给定的人物、地点、时间段。")
