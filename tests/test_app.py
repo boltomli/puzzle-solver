@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -194,10 +195,13 @@ def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(mo
         def __init__(self, on_result=None):
             self.on_result = on_result
             self.pick_calls: list[dict] = []
+            self.awaited_pick_calls: list[dict] = []
             captured_picker["picker"] = self
 
-        def pick_files(self, **kwargs):
+        async def pick_files(self, **kwargs):
             self.pick_calls.append(kwargs)
+            await asyncio.sleep(0)
+            self.awaited_pick_calls.append(kwargs)
 
     monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
 
@@ -206,7 +210,7 @@ def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(mo
 
     landing = page.controls[0]
     import_button = _find_button_by_text(landing, "导入旧版 JSON")
-    import_button.on_click(None)
+    asyncio.run(import_button.on_click(None))
 
     picker = captured_picker["picker"]
     assert picker.pick_calls == [
@@ -216,6 +220,7 @@ def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(mo
             "dialog_title": "选择旧版 JSON 项目文件",
         }
     ]
+    assert picker.awaited_pick_calls == picker.pick_calls
     assert "picker" in captured_picker
 
     picker.on_result(
@@ -276,10 +281,13 @@ def test_project_view_import_entrypoint_shows_error_feedback_when_import_fails(m
         def __init__(self, on_result=None):
             self.on_result = on_result
             self.pick_calls: list[dict] = []
+            self.awaited_pick_calls: list[dict] = []
             captured_picker["picker"] = self
 
-        def pick_files(self, **kwargs):
+        async def pick_files(self, **kwargs):
             self.pick_calls.append(kwargs)
+            await asyncio.sleep(0)
+            self.awaited_pick_calls.append(kwargs)
 
     monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
 
@@ -289,9 +297,16 @@ def test_project_view_import_entrypoint_shows_error_feedback_when_import_fails(m
     project_view = page.controls[0]
     appbar = project_view.controls[0]
     import_button = _find_control_by_tooltip(appbar, "导入旧版 JSON")
-    import_button.on_click(None)
+    asyncio.run(import_button.on_click(None))
 
     picker = captured_picker["picker"]
+    assert picker.awaited_pick_calls == [
+        {
+            "allow_multiple": False,
+            "allowed_extensions": ["json"],
+            "dialog_title": "选择旧版 JSON 项目文件",
+        }
+    ]
     picker.on_result(
         type(
             "FilePickerResultEvent",

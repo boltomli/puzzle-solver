@@ -120,8 +120,8 @@ def main(page: ft.Page):
     file_picker.on_result = import_project_from_picker_result
     page.overlay.append(file_picker)
 
-    def show_import_project_dialog(e):
-        file_picker.pick_files(
+    async def show_import_project_dialog(e):
+        await file_picker.pick_files(
             allow_multiple=False,
             allowed_extensions=["json"],
             dialog_title="选择旧版 JSON 项目文件",
