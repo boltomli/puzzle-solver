@@ -218,3 +218,79 @@ def test_import_does_not_mutate_source_json(sqlite_state: AppState, tmp_path: Pa
 
     after = hashlib.sha256(source_path.read_bytes()).hexdigest()
     assert after == before
+
+
+def test_import_invalid_json_fails_clearly_and_leaves_no_projects(
+    sqlite_state: AppState, tmp_path: Path
+) -> None:
+    source_path = tmp_path / "broken.json"
+    source_path.write_text("{ invalid json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="无法导入 JSON 项目"):
+        sqlite_state.import_project_from_json(source_path)
+
+    assert sqlite_state.list_projects() == []
+    assert sqlite_state.current_project is None
+
+
+def test_duplicate_import_replaces_existing_project_without_creating_ambiguous_duplicates(
+    sqlite_state: AppState, tmp_path: Path
+) -> None:
+    source_project = Project(
+        id="dup-project",
+        name="重复导入项目",
+        description="第一次导入",
+        characters=[Character(id="char-1", name="阿明")],
+    )
+    source_path = _write_project_json(tmp_path / "duplicate.json", source_project)
+
+    first_import = sqlite_state.import_project_from_json(source_path)
+    sqlite_state.add_character(name="本地修改角色")
+    sqlite_state.current_project = None
+
+    updated_source_project = source_project.model_copy(
+        update={
+            "description": "第二次导入",
+            "characters": [Character(id="char-1", name="阿明"), Character(id="char-2", name="阿红")],
+        }
+    )
+    source_path.write_text(updated_source_project.model_dump_json(indent=2), encoding="utf-8")
+
+    second_import = sqlite_state.import_project_from_json(source_path)
+
+    assert first_import.id == second_import.id == "dup-project"
+    projects = sqlite_state.list_projects()
+    assert [project.id for project in projects] == ["dup-project"]
+    assert sqlite_state.current_project is not None
+    assert sqlite_state.current_project.id == "dup-project"
+    assert sqlite_state.current_project.description == "第二次导入"
+    assert [character.id for character in sqlite_state.current_project.characters] == [
+        "char-1",
+        "char-2",
+    ]
+    assert all(character.name != "本地修改角色" for character in sqlite_state.current_project.characters)
+
+
+def test_failed_import_is_atomic_when_store_write_fails(sqlite_state: AppState, tmp_path: Path) -> None:
+    existing_project = sqlite_state.create_project(name="原生项目")
+    sqlite_state.current_project = None
+
+    source_project = Project(id="atomic-project", name="原子导入项目")
+    source_path = _write_project_json(tmp_path / "atomic.json", source_project)
+
+    original_persist = sqlite_state.store._persist_project_records
+
+    def fail_during_persist(session, project: Project) -> None:
+        original_persist(session, project)
+        raise RuntimeError("boom")
+
+    sqlite_state.store._persist_project_records = fail_during_persist  # type: ignore[method-assign]
+    try:
+        with pytest.raises(ValueError, match="无法导入 JSON 项目"):
+            sqlite_state.import_project_from_json(source_path)
+    finally:
+        sqlite_state.store._persist_project_records = original_persist  # type: ignore[method-assign]
+
+    projects = sqlite_state.list_projects()
+    assert [project.id for project in projects] == [existing_project.id]
+    assert sqlite_state.current_project is None

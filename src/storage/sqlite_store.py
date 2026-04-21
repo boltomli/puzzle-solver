@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
 from sqlmodel import Session, SQLModel, create_engine, delete, select
 
 from src.models.puzzle import (
@@ -228,134 +229,7 @@ class SQLiteStore:
         self.create_schema()
         with self.session() as session:
             self._delete_project_records(session, project.id)
-
-            session.add(
-                ProjectTable(
-                    id=project.id,
-                    name=project.name,
-                    description=project.description,
-                    created_at=project.created_at,
-                    updated_at=project.updated_at,
-                    character_count=len(project.characters),
-                    location_count=len(project.locations),
-                    script_count=len(project.scripts),
-                    fact_count=len(project.facts),
-                )
-            )
-            session.add_all(
-                CharacterTable(
-                    id=row.id,
-                    project_id=project.id,
-                    name=row.name,
-                    aliases=row.aliases,
-                    description=row.description,
-                    status=row.status.value,
-                    discovered_in_script_id=row.discovered_in_script_id,
-                    created_at=row.created_at,
-                )
-                for row in project.characters
-            )
-            session.add_all(
-                LocationTable(
-                    id=row.id,
-                    project_id=project.id,
-                    name=row.name,
-                    aliases=row.aliases,
-                    description=row.description,
-                    discovered_in_script_id=row.discovered_in_script_id,
-                    created_at=row.created_at,
-                )
-                for row in project.locations
-            )
-            session.add_all(
-                TimeSlotTable(
-                    id=row.id,
-                    project_id=project.id,
-                    label=row.label,
-                    description=row.description,
-                    sort_order=row.sort_order,
-                )
-                for row in project.time_slots
-            )
-            session.add_all(
-                ScriptTable(
-                    id=row.id,
-                    project_id=project.id,
-                    title=row.title,
-                    raw_text=row.raw_text,
-                    metadata_json=row.metadata.model_dump(),
-                    analysis_result=row.analysis_result,
-                    added_at=row.added_at,
-                )
-                for row in project.scripts
-            )
-            session.add_all(
-                FactTable(
-                    id=row.id,
-                    project_id=project.id,
-                    character_id=row.character_id,
-                    location_id=row.location_id,
-                    time_slot=row.time_slot,
-                    source_type=row.source_type.value,
-                    source_evidence=row.source_evidence,
-                    source_script_ids=row.source_script_ids,
-                    from_deduction_id=row.from_deduction_id,
-                    confirmed_at=row.confirmed_at,
-                )
-                for row in project.facts
-            )
-            session.add_all(
-                DeductionTable(
-                    id=row.id,
-                    project_id=project.id,
-                    character_id=row.character_id,
-                    location_id=row.location_id,
-                    time_slot=row.time_slot,
-                    confidence=row.confidence.value,
-                    reasoning=row.reasoning,
-                    supporting_script_ids=row.supporting_script_ids,
-                    depends_on_fact_ids=row.depends_on_fact_ids,
-                    status=row.status.value,
-                    batch_id=row.batch_id,
-                    created_at=row.created_at,
-                    resolved_at=row.resolved_at,
-                )
-                for row in project.deductions
-            )
-            session.add_all(
-                RejectionTable(
-                    id=row.id,
-                    project_id=project.id,
-                    character_id=row.character_id,
-                    location_id=row.location_id,
-                    time_slot=row.time_slot,
-                    reason=row.reason,
-                    from_deduction_id=row.from_deduction_id,
-                    rejected_at=row.rejected_at,
-                )
-                for row in project.rejections
-            )
-            session.add_all(
-                HintTable(
-                    id=row.id,
-                    project_id=project.id,
-                    type=row.type.value,
-                    content=row.content,
-                    applies_to_json=row.applies_to.model_dump(),
-                    created_at=row.created_at,
-                )
-                for row in project.hints
-            )
-            session.add_all(
-                IgnoredEntityTable(
-                    id=row.id,
-                    project_id=project.id,
-                    kind=row.kind.value,
-                    name=row.name,
-                    created_at=row.created_at,
-                )
-                for row in project.ignored_entities
-            )
+            self._persist_project_records(session, project)
             session.commit()
 
     def create_project(
@@ -370,8 +244,24 @@ class SQLiteStore:
 
     def import_project_from_json(self, json_path: str | Path) -> Project:
         source_path = Path(json_path)
-        project = Project.model_validate_json(source_path.read_text(encoding="utf-8"))
-        self.save_project(project)
+        if not source_path.exists() or not source_path.is_file():
+            raise ValueError(f"无法导入 JSON 项目：文件不存在 - {source_path}")
+
+        try:
+            raw_json = source_path.read_text(encoding="utf-8")
+            project = Project.model_validate_json(raw_json)
+        except (OSError, UnicodeDecodeError, ValidationError) as exc:
+            raise ValueError(f"无法导入 JSON 项目：{source_path}") from exc
+
+        self.create_schema()
+        try:
+            with self.session() as session:
+                self._delete_project_records(session, project.id)
+                self._persist_project_records(session, project)
+                session.commit()
+        except Exception as exc:
+            raise ValueError(f"无法导入 JSON 项目：{source_path}") from exc
+
         return project
 
     def delete_project(self, project_id: str) -> None:
@@ -394,3 +284,132 @@ class SQLiteStore:
         session.exec(delete(HintTable).where(HintTable.project_id == project_id))
         session.exec(delete(IgnoredEntityTable).where(IgnoredEntityTable.project_id == project_id))
         session.exec(delete(ProjectTable).where(ProjectTable.id == project_id))
+
+    def _persist_project_records(self, session: Session, project: Project) -> None:
+        session.add(
+            ProjectTable(
+                id=project.id,
+                name=project.name,
+                description=project.description,
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+                character_count=len(project.characters),
+                location_count=len(project.locations),
+                script_count=len(project.scripts),
+                fact_count=len(project.facts),
+            )
+        )
+        session.add_all(
+            CharacterTable(
+                id=row.id,
+                project_id=project.id,
+                name=row.name,
+                aliases=row.aliases,
+                description=row.description,
+                status=row.status.value,
+                discovered_in_script_id=row.discovered_in_script_id,
+                created_at=row.created_at,
+            )
+            for row in project.characters
+        )
+        session.add_all(
+            LocationTable(
+                id=row.id,
+                project_id=project.id,
+                name=row.name,
+                aliases=row.aliases,
+                description=row.description,
+                discovered_in_script_id=row.discovered_in_script_id,
+                created_at=row.created_at,
+            )
+            for row in project.locations
+        )
+        session.add_all(
+            TimeSlotTable(
+                id=row.id,
+                project_id=project.id,
+                label=row.label,
+                description=row.description,
+                sort_order=row.sort_order,
+            )
+            for row in project.time_slots
+        )
+        session.add_all(
+            ScriptTable(
+                id=row.id,
+                project_id=project.id,
+                title=row.title,
+                raw_text=row.raw_text,
+                metadata_json=row.metadata.model_dump(),
+                analysis_result=row.analysis_result,
+                added_at=row.added_at,
+            )
+            for row in project.scripts
+        )
+        session.add_all(
+            FactTable(
+                id=row.id,
+                project_id=project.id,
+                character_id=row.character_id,
+                location_id=row.location_id,
+                time_slot=row.time_slot,
+                source_type=row.source_type.value,
+                source_evidence=row.source_evidence,
+                source_script_ids=row.source_script_ids,
+                from_deduction_id=row.from_deduction_id,
+                confirmed_at=row.confirmed_at,
+            )
+            for row in project.facts
+        )
+        session.add_all(
+            DeductionTable(
+                id=row.id,
+                project_id=project.id,
+                character_id=row.character_id,
+                location_id=row.location_id,
+                time_slot=row.time_slot,
+                confidence=row.confidence.value,
+                reasoning=row.reasoning,
+                supporting_script_ids=row.supporting_script_ids,
+                depends_on_fact_ids=row.depends_on_fact_ids,
+                status=row.status.value,
+                batch_id=row.batch_id,
+                created_at=row.created_at,
+                resolved_at=row.resolved_at,
+            )
+            for row in project.deductions
+        )
+        session.add_all(
+            RejectionTable(
+                id=row.id,
+                project_id=project.id,
+                character_id=row.character_id,
+                location_id=row.location_id,
+                time_slot=row.time_slot,
+                reason=row.reason,
+                from_deduction_id=row.from_deduction_id,
+                rejected_at=row.rejected_at,
+            )
+            for row in project.rejections
+        )
+        session.add_all(
+            HintTable(
+                id=row.id,
+                project_id=project.id,
+                type=row.type.value,
+                content=row.content,
+                applies_to_json=row.applies_to.model_dump(),
+                created_at=row.created_at,
+            )
+            for row in project.hints
+        )
+        session.add_all(
+            IgnoredEntityTable(
+                id=row.id,
+                project_id=project.id,
+                kind=row.kind.value,
+                name=row.name,
+                created_at=row.created_at,
+            )
+            for row in project.ignored_entities
+        )
