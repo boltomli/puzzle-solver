@@ -294,3 +294,121 @@ def test_failed_import_is_atomic_when_store_write_fails(sqlite_state: AppState, 
     projects = sqlite_state.list_projects()
     assert [project.id for project in projects] == [existing_project.id]
     assert sqlite_state.current_project is None
+
+
+def test_imported_project_edit_reload_cross_flow_parity(sqlite_state: AppState, tmp_path: Path) -> None:
+    imported_script = Script(
+        id="script-edit",
+        title="原始标题",
+        raw_text="原始剧本",
+        metadata=ScriptMetadata(
+            stated_time="09:00",
+            stated_location="大厅",
+            characters_mentioned=["阿明"],
+            source_order=2,
+            user_notes="原始备注",
+        ),
+        analysis_result={
+            "characters_mentioned": [{"name": "阿明", "character_id": "char-a", "is_new": False}],
+            "locations_mentioned": [{"name": "大厅", "location_id": "loc-hall", "is_new": False}],
+            "time_references": [{"time_slot": "09:00", "reference_text": "09:00", "is_explicit": True}],
+            "direct_facts": [],
+        },
+    )
+    source_project = Project(
+        id="cross-flow-import",
+        name="跨流程导入项目",
+        description="验证导入后编辑重载",
+        time_slots=[
+            TimeSlot(id="ts-09", label="09:00", description="早上", sort_order=0),
+            TimeSlot(id="ts-10", label="10:00", description="中段", sort_order=1),
+        ],
+        characters=[Character(id="char-a", name="阿明"), Character(id="char-b", name="阿红")],
+        locations=[
+            Location(id="loc-hall", name="大厅"),
+            Location(id="loc-garden", name="花园"),
+            Location(id="loc-study", name="书房"),
+        ],
+        scripts=[imported_script],
+        facts=[
+            Fact(
+                id="fact-base",
+                character_id="char-a",
+                location_id="loc-hall",
+                time_slot="ts-09",
+                source_type=SourceType.script_explicit,
+                source_script_ids=["script-edit"],
+            )
+        ],
+        deductions=[
+            Deduction(
+                id="ded-pending-cross",
+                character_id="char-b",
+                location_id="loc-garden",
+                time_slot="ts-10",
+                confidence=ConfidenceLevel.high,
+                reasoning="待处理推断",
+                supporting_script_ids=["script-edit"],
+                status=DeductionStatus.pending,
+            )
+        ],
+    )
+    source_path = _write_project_json(tmp_path / "cross-flow.json", source_project)
+
+    imported = sqlite_state.import_project_from_json(source_path)
+    original_updated_at = imported.updated_at
+
+    updated_script = sqlite_state.update_script(
+        "script-edit",
+        title="已编辑标题",
+        raw_text="已编辑剧本",
+        user_notes="已编辑备注",
+    )
+    assert updated_script is not None
+    assert updated_script.metadata.source_order == 2
+    assert updated_script.analysis_result == imported_script.analysis_result
+
+    new_char = sqlite_state.add_character(name="新角色")
+    new_loc = sqlite_state.add_location(name="地下室")
+    reordered = sqlite_state.reorder_time_slot("ts-10", -1)
+    assert reordered is True
+
+    rejection = sqlite_state.reject_deduction("ded-pending-cross")
+    assert rejection is not None
+    assert rejection.reason == "用户拒绝"
+    new_fact = sqlite_state.add_fact(
+        character_id=new_char.id,
+        location_id=new_loc.id,
+        time_slot="ts-09",
+        source_type=SourceType.user_input,
+        source_evidence="手动补充",
+    )
+    assert new_fact.source_evidence == "手动补充"
+
+    imported_id = imported.id
+    sqlite_state.current_project = None
+    sqlite_state.load_project(imported_id)
+    reloaded = sqlite_state.current_project
+    assert reloaded is not None
+
+    reloaded_script = next(script for script in reloaded.scripts if script.id == "script-edit")
+    assert reloaded_script.title == "已编辑标题"
+    assert reloaded_script.raw_text == "已编辑剧本"
+    assert reloaded_script.metadata.user_notes == "已编辑备注"
+    assert reloaded_script.metadata.source_order == 2
+    assert reloaded_script.analysis_result == imported_script.analysis_result
+
+    assert reloaded.updated_at > original_updated_at
+    assert [ts.id for ts in reloaded.time_slots] == ["ts-10", "ts-09"]
+    assert sqlite_state.cache.ts_label_map["10:00"] == "ts-10"
+    assert sqlite_state.cache.ts_label_map["09:00"] == "ts-09"
+    assert sqlite_state.get_pending_deductions() == []
+    assert any(r.from_deduction_id == "ded-pending-cross" for r in reloaded.rejections)
+    assert ("char-b", "loc-garden", "ts-10") in sqlite_state._rejection_index
+    assert ("char-b", "loc-garden", "ts-10") not in sqlite_state._pending_index
+    assert ("char-a", "loc-hall", "ts-09") in sqlite_state._fact_index
+    assert (new_char.id, new_loc.id, "ts-09") in sqlite_state._fact_index
+    assert any(character.id == new_char.id for character in reloaded.characters)
+    assert any(location.id == new_loc.id for location in reloaded.locations)
+    assert any(fact.id == "fact-base" for fact in reloaded.facts)
+    assert any(fact.id == new_fact.id for fact in reloaded.facts)
