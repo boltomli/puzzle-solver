@@ -33,8 +33,9 @@ None.
 7. After focused tests pass, run:
    - `uv run ruff check src tests`
    - `uv run pytest tests/ -v`
-8. If the feature touches the default load/list path or import flow, manually smoke the relevant path when feasible and record the observation.
-9. Do not leave TODOs or partial migration semantics undocumented in the handoff; explicitly state what remains undone.
+8. If the feature is verification-focused and the implementation already satisfies the requested behavior, test-only completion is acceptable, but the added evidence must directly exercise every claimed surface.
+9. If the feature touches the default load/list path or import flow, manually smoke the relevant path when feasible and record the observation; for storage-layer-only work, focused automated evidence can satisfy the feature if it directly proves the claimed behavior.
+10. Do not leave TODOs or partial migration semantics undocumented in the handoff; explicitly state what remains undone.
 
 ## Example Handoff
 
