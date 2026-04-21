@@ -20,3 +20,9 @@
 ## API Configuration
 - `config.json` at project root stores OpenAI-compatible API settings
 - API key required only for AI deduction features (not for core data management)
+
+## Storage Migration Notes
+- Active mission storage backend target: local SQLite file(s)
+- No external database or cache services are allowed for this mission
+- Legacy JSON project files are imported only through explicit user action
+- Default startup path must not scan legacy JSON project directories
