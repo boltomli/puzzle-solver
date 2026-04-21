@@ -2,35 +2,29 @@
 
 ## Validation Surface
 
-**Primary surface:** Flet web app at http://localhost:8080
+**Primary automated surface:** pytest + ruff against repository/state/integration behavior.
 
-**How to access:** Start with `.venv\Scripts\python main.py --web` — serves Flet web UI on port 8080. Auto-opens browser window.
+**Interactive surface:** Flet app in web mode at `http://localhost:8080` for key manual smoke checks only.
 
-**Test data:** Two project JSON files in `data/` directory:
-- Small project (3.7 KB)
-- Large project "red pearls" (39.9 KB, 890 lines) with characters, locations, time_slots, scripts, deductions
+**Key user-visible flows to smoke manually:**
+- create a new project
+- load an existing SQLite-backed project
+- explicitly import a legacy JSON file
+- verify imported project appears in normal project list
+- edit scripts/entities and reload
+- accept/reject deductions and verify matrix/review state remains coherent
 
-**Key pages to verify:**
-- Project list / selector (app.py)
-- Matrix view — character × time grid (matrix.py)
-- Entity management — add/remove characters, locations, time slots (manage.py)
-- Script management — add scripts, view analysis (scripts.py)
-- Review — deduction history (review.py)
-
-**Tools:** agent-browser for web mode verification, curl for health checks.
+**Important mission constraint:** startup must not scan legacy JSON directories automatically; JSON appears only through explicit import.
 
 ## Validation Concurrency
 
-**Machine specs:** 16GB RAM, 8 cores/16 threads, ~3.8GB free
-**Flet server footprint:** ~130MB (server + browser)
-**agent-browser footprint:** ~300MB per instance
-**Total per validator:** ~430MB
+This mission is primarily pytest-driven. Interactive validation is light and sequential.
 
-**Max concurrent validators:** 5 (5 × 430MB = 2.15GB, well within 3.8GB × 0.7 = 2.66GB budget)
+- Automated validator surface (`pytest`): up to 5 concurrent validators is acceptable for this repository size
+- Interactive/manual smoke (`flet-web`): 1 at a time
 
 ## Testing Notes
 
-- This is a refactoring mission — primary validation is behavioral compatibility
-- All 212+ existing pytest tests serve as regression suite
-- User testing confirms the app still renders and functions correctly
-- No new UI features to test — just verify existing functionality preserved
+- Existing regression tests are the primary compatibility oracle.
+- This mission does not add a UI automation framework.
+- Performance validation is smoke-threshold based using representative seeded data, not strict benchmarking.

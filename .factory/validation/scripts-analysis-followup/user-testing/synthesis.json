@@ -1,0 +1,26 @@
+{
+  "milestone": "scripts-analysis-followup",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CROSS-012",
+    "VAL-CROSS-013",
+    "VAL-CROSS-014"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "validation-state.json",
+      "description": "Marked VAL-CROSS-012, VAL-CROSS-013, and VAL-CROSS-014 as passed for milestone scripts-analysis-followup based on focused pytest evidence.",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null
+}

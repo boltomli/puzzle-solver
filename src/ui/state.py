@@ -3,13 +3,14 @@
 All UI mutations go through AppState methods which handle persistence.
 The Flet UI layer will call page.update() directly after state changes.
 
-AppState is a thin coordinator: it holds a JsonRepository instance and
-delegates all data operations to it.  Public method signatures remain
-identical to the original implementation so that existing callers
-(UI pages, tests, services) are unaffected.
+AppState is a thin coordinator: it holds a repository implementation and
+delegates all data operations to it. Public method signatures remain
+identical so existing callers (UI pages, tests, services) are unaffected.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from src.models.puzzle import (
     Character,
@@ -30,6 +31,17 @@ from src.models.puzzle import (
 from src.storage.cache_manager import CacheManager
 from src.storage.json_repository import JsonRepository
 from src.storage.json_store import JsonStore
+from src.storage.repository import Repository
+from src.storage.sqlite_repository import SQLiteRepository
+from src.storage.sqlite_store import SQLiteStore
+
+
+def _make_repository(store: JsonStore | SQLiteStore | None = None) -> Repository:
+    if store is None:
+        return SQLiteRepository(store=SQLiteStore())
+    if isinstance(store, SQLiteStore):
+        return SQLiteRepository(store=store)
+    return JsonRepository(store=store)
 
 
 class AppState:
@@ -38,16 +50,16 @@ class AppState:
     Internally delegates all data operations to a :class:`JsonRepository`.
     """
 
-    def __init__(self, store: JsonStore | None = None) -> None:
-        self._repo = JsonRepository(store=store)
+    def __init__(self, store: JsonStore | SQLiteStore | None = None) -> None:
+        self._repo = _make_repository(store=store)
 
     # ------------------------------------------------------------------
     # Backward-compatibility attributes
     # ------------------------------------------------------------------
 
     @property
-    def store(self) -> JsonStore:
-        """Expose the underlying JsonStore for callers that access it directly."""
+    def store(self) -> JsonStore | SQLiteStore:
+        """Expose the underlying store for callers that access it directly."""
         return self._repo.store
 
     @property
@@ -138,6 +150,12 @@ class AppState:
     def list_projects(self):
         """List all available projects as summaries."""
         return self._repo.list_projects()
+
+    def import_project_from_json(self, json_path: str | Path) -> Project:
+        """Import one user-selected legacy JSON project into active storage."""
+        if not isinstance(self.store, SQLiteStore):
+            raise NotImplementedError("JSON import is only supported for SQLite-backed storage")
+        return self._repo.import_project_from_json(json_path)
 
     # ------------------------------------------------------------------
     # Character management

@@ -388,3 +388,41 @@ class TestBuildLocationTimeData:
         names = {r["location"] for r in result}
         assert ids == {"loc-lib", "loc-kit"}
         assert names == {"图书馆", "厨房"}
+
+
+def test_check_pending_entities_treats_aliases_as_handled(monkeypatch):
+    """Reopened analysis should not flag merged aliases as missing entities."""
+    from src.ui.pages import matrix as matrix_mod
+
+    project = Project(
+        name="Alias Check",
+        time_slots=["14:00"],
+        characters=[Character(id="char-1", name="Alice", aliases=["艾丽斯"])],
+        locations=[Location(id="loc-1", name="图书馆", aliases=["藏书室"])],
+        scripts=[
+            {
+                "id": "script-1",
+                "raw_text": "text",
+                "analysis_result": {
+                    "characters_mentioned": [{"name": "艾丽斯", "is_new": True}],
+                    "locations_mentioned": [{"name": "藏书室", "is_new": True}],
+                    "time_references": [],
+                },
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        matrix_mod.app_state,
+        "is_entity_ignored",
+        lambda kind, name: False,
+    )
+
+    missing_chars, missing_locs, missing_times, unanalyzed = matrix_mod._check_pending_entities(
+        project
+    )
+
+    assert missing_chars == []
+    assert missing_locs == []
+    assert missing_times == []
+    assert unanalyzed == []

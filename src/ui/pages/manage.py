@@ -216,7 +216,7 @@ def _build_time_slots_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                         controls=[
                             ts_input,
                             desc_input,
-                            ft.ElevatedButton("添加", icon=ft.Icons.ADD, on_click=on_add_slot),
+                            ft.Button("添加", icon=ft.Icons.ADD, on_click=on_add_slot),
                         ],
                         spacing=10,
                         alignment=ft.MainAxisAlignment.START,
@@ -305,7 +305,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             ),
             actions=[
                 ft.TextButton("取消", on_click=do_cancel),
-                ft.ElevatedButton("保存", on_click=do_save),
+                ft.Button("保存", on_click=do_save),
             ],
         )
         page.overlay.append(dlg)
@@ -376,8 +376,8 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text("此操作不可撤销"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
-                    ft.ElevatedButton(
-                        "删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete
+                    ft.Button(
+                        "删除", style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED), on_click=do_delete
                     ),
                 ],
             )
@@ -457,7 +457,7 @@ def _build_characters_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             char_controls.append(card)
 
     char_controls.append(
-        ft.ElevatedButton("添加人物", icon=ft.Icons.PERSON_ADD, on_click=on_add_character),
+        ft.Button("添加人物", icon=ft.Icons.PERSON_ADD, on_click=on_add_character),
     )
 
     # Separate add button from cards for layout
@@ -529,7 +529,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             ),
             actions=[
                 ft.TextButton("取消", on_click=do_cancel),
-                ft.ElevatedButton("保存", on_click=do_save),
+                ft.Button("保存", on_click=do_save),
             ],
         )
         page.overlay.append(dlg)
@@ -597,8 +597,8 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                 content=ft.Text("此操作不可撤销"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
-                    ft.ElevatedButton(
-                        "删除", color=ft.Colors.WHITE, bgcolor=ft.Colors.RED, on_click=do_delete
+                    ft.Button(
+                        "删除", style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED), on_click=do_delete
                     ),
                 ],
             )
@@ -665,7 +665,7 @@ def _build_locations_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             loc_controls.append(card)
 
     loc_controls.append(
-        ft.ElevatedButton("添加地点", icon=ft.Icons.ADD_LOCATION, on_click=on_add_location),
+        ft.Button("添加地点", icon=ft.Icons.ADD_LOCATION, on_click=on_add_location),
     )
 
     # Separate add button from cards for layout
@@ -768,7 +768,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             ),
             actions=[
                 ft.TextButton("取消", on_click=do_cancel),
-                ft.ElevatedButton("保存", on_click=do_save),
+                ft.Button("保存", on_click=do_save),
             ],
         )
         page.overlay.append(dlg)
@@ -859,7 +859,7 @@ def _build_hints_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
             hint_controls.append(card)
 
     hint_controls.append(
-        ft.ElevatedButton("添加规则", icon=ft.Icons.ADD, on_click=on_add_hint),
+        ft.Button("添加规则", icon=ft.Icons.ADD, on_click=on_add_hint),
     )
 
     return ft.ExpansionPanel(
@@ -979,7 +979,7 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                                 spacing=10,
                                 wrap=True,
                             ),
-                            ft.ElevatedButton("添加事实", icon=ft.Icons.ADD, on_click=on_add_fact),
+                            ft.Button("添加事实", icon=ft.Icons.ADD, on_click=on_add_fact),
                         ],
                         spacing=10,
                     ),
@@ -1026,10 +1026,9 @@ def _build_facts_panel(page, refresh, show_snackbar) -> ft.ExpansionPanel:
                         content=ft.Text("此操作不可撤销"),
                         actions=[
                             ft.TextButton("取消", on_click=do_cancel),
-                            ft.ElevatedButton(
+                            ft.Button(
                                 "删除",
-                                color=ft.Colors.WHITE,
-                                bgcolor=ft.Colors.RED,
+                                style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED),
                                 on_click=do_delete,
                             ),
                         ],

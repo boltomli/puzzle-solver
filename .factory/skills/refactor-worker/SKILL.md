@@ -1,6 +1,6 @@
 ---
 name: refactor-worker
-description: Implements Repository pattern refactoring features with TDD approach
+description: Implements SQLite migration and parity-preserving storage refactors with TDD
 ---
 
 # Refactor Worker
@@ -9,84 +9,81 @@ NOTE: Startup and cleanup are handled by `worker-base`. This skill defines the W
 
 ## When to Use This Skill
 
-Features involving:
-- Creating new Python modules (repository.py, cache_manager.py, json_repository.py)
-- Refactoring existing modules (state.py, UI pages)
-- Writing unit/integration tests for data layer operations
-- Replacing ad-hoc patterns with centralized abstractions
+Use for features that:
+- add or modify Python persistence/storage modules
+- introduce SQLModel/SQLite schema and mappers
+- preserve AppState/repository behavioral compatibility
+- implement JSON import/migration flows
+- add regression, parity, migration, and performance smoke tests
 
 ## Required Skills
 
-None — all work is Python backend code verified through pytest and ruff.
+None.
 
 ## Work Procedure
 
-### Step 1: Understand the Feature
-
-1. Read the feature description, preconditions, expectedBehavior, and verificationSteps carefully.
-2. Read `.factory/library/architecture.md` for the target design.
-3. Read `AGENTS.md` for constraints and boundaries.
-4. If the feature modifies existing files, read those files FULLY before making any changes.
-5. If the feature depends on files created by previous features, read those to understand the API surface.
-
-### Step 2: Write Tests First (TDD — Red Phase)
-
-1. Create the test file specified in verificationSteps (e.g., `tests/test_cache_manager.py`).
-2. Write comprehensive test cases covering ALL items in expectedBehavior.
-3. For each expected behavior item, write at least one test. For complex behaviors, write multiple tests covering happy path + edge cases.
-4. Use `tmp_path` fixture for test isolation — create temp data directories, never use real `data/` directory.
-5. Import the module you're about to create (it won't exist yet — that's expected).
-6. Run the tests to confirm they fail: `.venv\Scripts\python -m pytest tests/test_<name>.py -v`
-7. Verify failures are import/implementation errors, NOT test syntax errors.
-
-### Step 3: Implement (Green Phase)
-
-1. Create or modify the source files.
-2. Follow patterns from existing code (read `src/ui/state.py` for naming conventions, method patterns).
-3. For new files: add `from __future__ import annotations`, use type hints everywhere.
-4. Implement incrementally — get one group of tests passing at a time.
-5. Run tests frequently: `.venv\Scripts\python -m pytest tests/test_<name>.py -v`
-
-### Step 4: Verify Thoroughly
-
-1. Run ALL tests (not just new ones): `.venv\Scripts\python -m pytest tests/ -v --tb=short`
-2. Run ruff on modified/new files: `.venv\Scripts\ruff check <files>`
-3. If any existing test fails, the refactoring has a bug — fix it WITHOUT modifying the test file.
-4. For features that modify UI pages: verify that `build_matrix_data` and related pure functions still produce correct output by running `tests/test_matrix.py`.
-5. For the e2e-web-verification feature: start the app in web mode, verify port 8080 responds, then kill the process.
-
-### Step 5: Manual Verification
-
-1. Review your own code for:
-   - Missing type hints
-   - Inconsistent method signatures (compare with current AppState API)
-   - Missing cache invalidation after mutations
-   - Missing save() calls after mutations
-2. Spot-check: pick 2-3 representative test scenarios and trace the data flow mentally.
-3. If the feature touches AppState: verify the module-level singleton `app_state = AppState()` still works.
+1. Read the feature, `mission.md`, mission `AGENTS.md`, and `.factory/library/architecture.md` before changing code.
+2. Read every touched file fully, including adjacent tests and any callers that depend on the same API.
+3. Write tests first:
+   - add or update focused parity/migration/performance smoke tests covering each expected behavior item
+   - run the new or focused tests first and confirm they fail for the intended reason
+4. Implement the smallest storage-layer change that makes the tests pass while preserving current caller-visible behavior.
+5. Prefer introducing new modules (`sqlite_*`, mapper/factory/import helpers) over invasive UI rewrites unless the feature explicitly requires UI changes.
+6. For import or multi-record persistence flows, use transaction-safe behavior and verify failure paths, not only happy paths.
+7. After focused tests pass, run:
+   - `uv run ruff check src tests`
+   - `uv run pytest tests/ -v`
+8. If the feature is verification-focused and the implementation already satisfies the requested behavior, test-only completion is acceptable, but the added evidence must directly exercise every claimed surface.
+9. If the feature touches the default load/list path or import flow, manually smoke the relevant path when feasible and record the observation; for storage-layer-only work, focused automated evidence can satisfy the feature if it directly proves the claimed behavior.
+10. Do not leave TODOs or partial migration semantics undocumented in the handoff; explicitly state what remains undone.
 
 ## Example Handoff
 
 ```json
 {
-  "salientSummary": "Implemented CacheManager with 7 index types (by-id, by-name, label-map, rejection-map, 3 dedup sets). Wrote 28 tests in test_cache_manager.py covering all index operations, invalidation, rebuild, rapid mutations, and edge cases. All 240 tests pass (28 new + 212 existing). Ruff clean.",
-  "whatWasImplemented": "src/storage/cache_manager.py: CacheManager class with rebuild(project), invalidate_character(action, char), invalidate_location(action, loc), invalidate_time_slot(action, ts), invalidate_fact(action, fact), invalidate_deduction(action, ded, fact=None, rejection=None), invalidate_rejection(action, rej). Seven index categories: char_by_id, loc_by_id, ts_by_id, char_by_name, loc_by_name, ts_label_map, rejection_map, plus fact_index/pending_index/rejection_index sets. Also created src/storage/repository.py with Repository Protocol defining 25 methods matching AppState API.",
+  "salientSummary": "Implemented SQLiteRepository parity for project lifecycle and core CRUD, keeping AppState behavior compatible while introducing SQLModel-backed persistence. Added focused parity tests plus full regression validation; all tests passed and default caller behavior remained unchanged.",
+  "whatWasImplemented": "Added SQLModel table definitions and SQLite store/session helpers, implemented SQLiteRepository create/list/load/save and core entity CRUD, wired AppState/backend factory to use the new repository path, and added parity tests comparing SQLite-backed behavior against current expectations for project creation, loading, saving, character/location/script/fact/time-slot operations, and safe no-project-loaded failures.",
   "whatWasLeftUndone": "",
   "verification": {
     "commandsRun": [
-      {"command": ".venv\\Scripts\\python -m pytest tests/test_cache_manager.py -v", "exitCode": 0, "observation": "28 tests passed"},
-      {"command": ".venv\\Scripts\\python -m pytest tests/ -q", "exitCode": 0, "observation": "240 passed in 3.8s"},
-      {"command": ".venv\\Scripts\\ruff check src/storage/cache_manager.py src/storage/repository.py", "exitCode": 0, "observation": "All checks passed"}
+      {
+        "command": "uv run ruff check src tests",
+        "exitCode": 0,
+        "observation": "All lint checks passed."
+      },
+      {
+        "command": "uv run pytest tests/test_sqlite_repository.py -v",
+        "exitCode": 0,
+        "observation": "Focused SQLite parity tests passed."
+      },
+      {
+        "command": "uv run pytest tests/ -v",
+        "exitCode": 0,
+        "observation": "Full regression suite passed."
+      }
     ],
-    "interactiveChecks": []
+    "interactiveChecks": [
+      {
+        "action": "Opened the app's normal project flow after switching backend wiring and created/loaded a project.",
+        "observed": "Project was immediately usable and reload showed the saved data correctly."
+      }
+    ]
   },
   "tests": {
     "added": [
-      {"file": "tests/test_cache_manager.py", "cases": [
-        {"name": "test_rebuild_populates_char_by_id", "verifies": "char_by_id index built on rebuild"},
-        {"name": "test_invalidate_add_character", "verifies": "adding character updates char_by_id and char_by_name"},
-        {"name": "test_rapid_mutations_consistent", "verifies": "burst of add/remove leaves indexes consistent"}
-      ]}
+      {
+        "file": "tests/test_sqlite_repository.py",
+        "cases": [
+          {
+            "name": "test_create_project_immediately_usable",
+            "verifies": "SQLite-backed create flow preserves current_project usability."
+          },
+          {
+            "name": "test_save_reload_preserves_core_entities",
+            "verifies": "SQLite-backed save/load preserves core project state."
+          }
+        ]
+      }
     ]
   },
   "discoveredIssues": []
@@ -95,8 +92,7 @@ None — all work is Python backend code verified through pytest and ruff.
 
 ## When to Return to Orchestrator
 
-- A precondition file doesn't exist (previous feature not completed)
-- Existing tests fail and the cause is NOT in your feature's scope
-- Method signature conflict between Repository Protocol and current AppState
-- CacheManager can't replicate an ad-hoc map's exact behavior (semantic mismatch)
-- Feature scope is larger than expected (e.g., more files need changes than listed)
+- The feature requires changing mission boundaries, such as reintroducing startup JSON scanning or external database services.
+- Existing tests fail for clearly unrelated reasons outside the feature scope.
+- A required behavior is ambiguous, especially duplicate-import semantics or caller-visible AppState compatibility.
+- The implementation reveals a broader architecture change is needed beyond the current feature description.

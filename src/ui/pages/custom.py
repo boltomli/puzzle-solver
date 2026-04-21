@@ -240,7 +240,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                             include_reasoning_switch,
                             ft.Row(
                                 controls=[
-                                    ft.ElevatedButton(
+                                    ft.Button(
                                         "开始自定义推理",
                                         icon=ft.Icons.PSYCHOLOGY,
                                         on_click=run_custom_deduction

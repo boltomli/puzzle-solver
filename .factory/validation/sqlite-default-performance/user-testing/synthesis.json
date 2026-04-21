@@ -1,0 +1,27 @@
+{
+  "milestone": "sqlite-default-performance",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-PERF-001",
+    "VAL-PERF-002",
+    "VAL-PERF-003",
+    "VAL-PERF-004",
+    "VAL-PERF-005",
+    "VAL-PERF-006",
+    "VAL-PERF-007",
+    "VAL-PERF-008",
+    "VAL-PERF-009",
+    "VAL-PERF-010"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

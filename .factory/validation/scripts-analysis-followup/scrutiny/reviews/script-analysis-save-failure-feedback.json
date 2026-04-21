@@ -1,0 +1,21 @@
+{
+  "featureId": "script-analysis-save-failure-feedback",
+  "reviewedAt": "2026-04-21T07:10:00Z",
+  "commitId": "511cf32845264d029646d8589c5f6786eec77fdb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Reviewed the script-analysis save-failure fix against the feature contract, handoff, transcript skeleton, and commit diff. The implementation correctly stops the success path when persistence fails, surfaces explicit Chinese feedback, and adds regression coverage for the async failure branch. I found no blocking or non-blocking correctness issues in the reviewed change set.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The scripts page now relies on the repository/AppState contract that `save_script_analysis(...)` returns a boolean success flag and that callers must branch on failure, but the shared library docs do not record this UI-flow expectation for script analysis operations.",
+      "evidence": "`src/ui/pages/scripts.py:1189-1196` now checks the boolean result and shows explicit failure feedback; `src/ui/state.py:271-273` and repository implementations expose the boolean-return contract; `.factory/library/patterns.md` documents tested script helpers but does not mention the save-result contract or the need for callers to avoid success UI when persistence returns False."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The feature satisfies VAL-CROSS-012 by showing explicit Chinese failure feedback when automatic analysis cannot be persisted and by preventing refresh/result-dialog success behavior from running. The added async regression test directly verifies the intended failure-path behavior."
+}

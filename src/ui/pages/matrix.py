@@ -26,6 +26,30 @@ def _is_api_configured() -> bool:
     return bool(config.get("api_base_url") and config.get("model"))
 
 
+def _is_character_handled(proj: Project, name: str) -> bool:
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return False
+    for char in proj.characters:
+        if char.name.lower() == normalized:
+            return True
+        if any(alias.lower() == normalized for alias in char.aliases):
+            return True
+    return False
+
+
+def _is_location_handled(proj: Project, name: str) -> bool:
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return False
+    for loc in proj.locations:
+        if loc.name.lower() == normalized:
+            return True
+        if any(alias.lower() == normalized for alias in loc.aliases):
+            return True
+    return False
+
+
 def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[str], list[str]]:
     """Check for unanalyzed scripts and entities not yet added from analyzed scripts.
 
@@ -36,8 +60,6 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
         if script.analysis_result is None:
             unanalyzed.append(script.title or f"剧本 #{script.metadata.source_order or '?'}")
 
-    existing_chars = {c.name.lower() for c in proj.characters}
-    existing_locs = {lo.name.lower() for lo in proj.locations}
     existing_times = {ts.label for ts in proj.time_slots}
 
     missing_chars: set[str] = set()
@@ -51,7 +73,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             name = ch.get("name", "").strip()
             if (
                 name
-                and name.lower() not in existing_chars
+                and not _is_character_handled(proj, name)
                 and not app_state.is_entity_ignored(EntityKind.character, name)
             ):
                 missing_chars.add(name)
@@ -59,7 +81,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             name = lo.get("name", "").strip()
             if (
                 name
-                and name.lower() not in existing_locs
+                and not _is_location_handled(proj, name)
                 and not app_state.is_entity_ignored(EntityKind.location, name)
             ):
                 missing_locs.add(name)
@@ -496,7 +518,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_ai_warn),
-                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_ai_warn),
+                    ft.Button("仍然继续推断", on_click=_proceed_ai_warn),
                 ],
             )
             page.overlay.append(_ai_warn_dlg)
@@ -528,7 +550,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         except Exception as exc:
             show_snackbar(f"消元推断失败: {str(exc)[:200]}", ft.Colors.RED)
 
-    ai_button = ft.ElevatedButton(
+    ai_button = ft.Button(
         "🤖 AI 推断",
         icon=ft.Icons.PSYCHOLOGY,
         on_click=run_ai_deduction if api_ok else None,
@@ -902,7 +924,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_focused_warn),
-                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_focused_warn),
+                    ft.Button("仍然继续推断", on_click=_proceed_focused_warn),
                 ],
             )
             page.overlay.append(_focused_warn_dlg)
@@ -918,7 +940,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         api_ok,
         "run_focused_deduction" if api_ok else "None",
     )
-    focused_button = ft.ElevatedButton(
+    focused_button = ft.Button(
         "🎯 开始推断",
         icon=ft.Icons.FILTER_ALT,
         on_click=run_focused_deduction if api_ok else None,
@@ -1270,7 +1292,7 @@ def _show_new_entities_dialog(
         ),
         actions=[
             ft.TextButton("跳过", on_click=do_cancel),
-            ft.ElevatedButton(
+            ft.Button(
                 "添加选中实体",
                 icon=ft.Icons.PLAYLIST_ADD,
                 on_click=do_add,

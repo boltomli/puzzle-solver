@@ -1,0 +1,13 @@
+{
+  "featureId": "await-filepicker-launch-for-import",
+  "milestone": "sqlite-default-performance-followup-3",
+  "status": "pass",
+  "summary": "The feature correctly converts the shared legacy JSON import launch handler to async/await and adds regression coverage proving both import entrypoints await FilePicker.pick_files.",
+  "issues": [],
+  "sharedStateObservations": [],
+  "evidence": [
+    "Commit 761ec1b changes src/ui/app.py so show_import_project_dialog is async and awaits file_picker.pick_files(...), matching current Flet awaitable behavior.",
+    "tests/test_app.py now uses async stub pickers plus asyncio.run on both landing-page and project-view import buttons, and asserts awaited_pick_calls matches pick_calls.",
+    "Full-suite validation passed in current scrutiny run: uv run pytest tests/ -v => 551 passed; uv run ruff check src tests => All checks passed; configured typecheck is a no-op placeholder in .factory/services.yaml."
+  ]
+}

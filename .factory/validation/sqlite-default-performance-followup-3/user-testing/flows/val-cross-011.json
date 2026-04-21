@@ -1,0 +1,33 @@
+{
+  "milestone": "sqlite-default-performance-followup-3",
+  "assertion": "VAL-CROSS-011",
+  "status": "pass",
+  "tool": "pytest",
+  "summary": "Focused UI regression tests confirmed the import picker launch is awaited and no un-awaited coroutine behavior regressed.",
+  "commands": [
+    {
+      "exitCode": 0,
+      "command": ".venv\\Scripts\\python -m pytest tests\\test_app.py -k \"awaited or import_entrypoint\" -v",
+      "observation": "Pytest selected 2 import-entrypoint tests and both passed; test assertions verified picker.awaited_pick_calls matched the pick_files invocations."
+    }
+  ],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-011",
+      "reason": "tests/test_app.py asserts awaited_pick_calls == pick_calls for the legacy JSON import picker flow, and the focused pytest run passed.",
+      "result": "pass"
+    }
+  ],
+  "frictions": [
+    "Task subagent launch was unavailable due to permission gating, so validation was executed directly in the worker session."
+  ],
+  "blockers": [],
+  "toolsUsed": [
+    "pytest"
+  ],
+  "evidence": [
+    "tests/test_app.py:198-223",
+    "tests/test_app.py:284-303",
+    "src/ui/app.py:124-128"
+  ]
+}

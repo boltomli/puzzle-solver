@@ -1,0 +1,59 @@
+{
+  "milestone": "sqlite-default-runtime-fix",
+  "round": 2,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd C:\\exp\\puzzle-solver && uv run pytest tests/ -v",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "echo no typecheck configured",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cd C:\\exp\\puzzle-solver && uv run ruff check src tests",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": [
+      "make-sqlite-default-runtime-backend"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "make-sqlite-default-runtime-backend",
+      "severity": "blocking",
+      "description": "src/ui/state.py still defaults AppState() to JsonRepository unless a SQLiteStore is passed explicitly, so the default runtime path is not SQLite-backed as required."
+    },
+    {
+      "featureId": "make-sqlite-default-runtime-backend",
+      "severity": "blocking",
+      "description": "The recorded handoff commit af986af64f641718eb512a7ab05d182ac49858e3 does not contain the claimed runtime-backend implementation or related regression tests, so the feature cannot be validated against its recorded commit."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills",
+      "suggestion": "Document the Windows-safe path/invocation for the mission init script as .factory\\init.sh to avoid workers trying .\\factory\\init.sh and failing on Windows path handling.",
+      "evidence": "The reviewed feature handoff reported an initial Windows path mismatch for the init script before switching to .factory\\init.sh.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Require feature handoff commitId values to reference the actual implementation commit being reviewed, not a later validation-only commit.",
+      "evidence": "Review of make-sqlite-default-runtime-backend found its handoff commit points to af986af64f641718eb512a7ab05d182ac49858e3, whose diff contains only validation artifacts and uv.lock rather than the claimed AppState/runtime backend changes.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/sqlite-default-runtime-fix/scrutiny/synthesis.json"
+}

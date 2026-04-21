@@ -1,0 +1,39 @@
+{
+  "featureId": "make-sqlite-default-runtime-backend",
+  "reviewedAt": "2026-04-21T16:20:00Z",
+  "commitId": "af986af64f641718eb512a7ab05d182ac49858e3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The reviewed handoff commit does not contain the claimed runtime-backend change, and the current AppState default path still falls back to JsonRepository when no explicit SQLiteStore is provided, so the feature is not substantiated and does not fulfill its expected behavior.",
+    "issues": [
+      {
+        "file": "src/ui/state.py",
+        "line": 40,
+        "severity": "blocking",
+        "description": "`_make_repository()` only returns `SQLiteRepository` when the caller already passes a `SQLiteStore`; the default `AppState()` startup path still falls back to `JsonRepository`, so newly created default-runtime projects are not switched to SQLite as required."
+      },
+      {
+        "file": "af986af64f641718eb512a7ab05d182ac49858e3",
+        "line": 1,
+        "severity": "blocking",
+        "description": "The feature handoff points to commit `af986af64f641718eb512a7ab05d182ac49858e3`, but `git show` for that commit changes only validation artifacts and `uv.lock`; it does not include the claimed runtime-backend implementation or related regression tests, so the feature cannot be validated against its recorded commit."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker reported a Windows path mismatch when trying to run the init script; the procedure should explicitly document the Windows-safe `.factory\\init.sh` invocation/path handling.",
+      "evidence": "Handoff skillFeedback.deviations[0] states the worker first tried `.\\factory\\init.sh` and suggests documenting the exact Windows-safe path `.factory\\init.sh`."
+    },
+    {
+      "area": "conventions",
+      "observation": "Mission traceability is weak: the feature handoff ties the feature to a commit whose diff does not contain the claimed implementation. The shared process should require handoff `commitId` to point at the actual feature change being reviewed.",
+      "evidence": "`git show --stat af986af64f641718eb512a7ab05d182ac49858e3` lists only `.factory/validation/...` JSON files and `uv.lock`, while the handoff claims default-runtime AppState/backend changes and targeted feature validation on that commit."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review failed. The recorded handoff commit does not contain the claimed feature implementation, and the current `AppState()` default repository factory still defaults to JSON unless a `SQLiteStore` is passed explicitly, so the feature's required SQLite-by-default runtime behavior is not demonstrated."
+}

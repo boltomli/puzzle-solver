@@ -1,8 +1,11 @@
 """Tests for the scripts page logic — specifically the deduction creation from analysis facts."""
 
+from __future__ import annotations
+
 import shutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -204,6 +207,35 @@ class TestCreateDeductionsFromFacts:
         created = _create_deductions_from_facts(proj, [], "script-1")
         assert created == 0
 
+    def test_resolves_character_and_location_aliases(self, state, project_with_entities):
+        """Merged aliases should resolve to existing canonical entities."""
+        from src.ui.pages.scripts import _create_deductions_from_facts
+
+        proj = project_with_entities
+        alice = proj.characters[0]
+        library = proj.locations[0]
+        state.merge_character("艾丽斯", alice.id)
+        state.merge_location("藏书室", library.id)
+
+        created = _create_deductions_from_facts(
+            proj,
+            [
+                {
+                    "character_name": "艾丽斯",
+                    "location_name": "藏书室",
+                    "time_slot": "14:00",
+                    "confidence": "high",
+                }
+            ],
+            "script-1",
+        )
+
+        assert created == 1
+        assert len(proj.deductions) == 1
+        deduction = proj.deductions[0]
+        assert deduction.character_id == alice.id
+        assert deduction.location_id == library.id
+
 
 class TestIsApiConfigured:
     """Tests for _is_api_configured helper."""
@@ -257,3 +289,64 @@ class TestIsApiConfigured:
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
         assert _is_api_configured() is False
+
+
+@pytest.mark.asyncio
+async def test_run_script_analysis_surfaces_save_failure_without_showing_results(
+    state, monkeypatch
+):
+    """Auto analysis should show explicit save-failure feedback and stop the success flow."""
+    import src.ui.pages.scripts as scripts_mod
+
+    monkeypatch.setattr(scripts_mod, "app_state", state)
+    state.create_project(name="Test")
+    script = state.add_script(raw_text="Some script text", title="Scene 1")
+
+    analysis_result = {
+        "characters_mentioned": [{"name": "Alice"}],
+        "locations_mentioned": [],
+        "time_references": [],
+        "direct_facts": [],
+    }
+
+    class _StubDeductionService:
+        async def analyze_script(self, proj, current_script, ts_by_id):
+            assert proj is state.current_project
+            assert current_script.id == script.id
+            assert ts_by_id == state.cache.ts_by_id
+            return analysis_result
+
+    shown_messages: list[tuple[str, str | None]] = []
+    refresh_calls: list[str] = []
+    shown_dialogs: list[dict] = []
+
+    import src.services.deduction as deduction_mod
+
+    monkeypatch.setattr(deduction_mod, "DeductionService", _StubDeductionService)
+    monkeypatch.setattr(
+        state,
+        "save_script_analysis",
+        lambda script_id, result: False,
+    )
+    monkeypatch.setattr(
+        scripts_mod,
+        "_show_analysis_results_dialog",
+        lambda *args, **kwargs: shown_dialogs.append({"args": args, "kwargs": kwargs}),
+    )
+
+    page = SimpleNamespace(update=lambda: None)
+
+    await scripts_mod._run_script_analysis(
+        page,
+        script.id,
+        lambda: refresh_calls.append("refresh"),
+        lambda message, color=None: shown_messages.append((message, color)),
+    )
+
+    assert shown_messages == [
+        ("🤖 正在分析剧本...", scripts_mod.ft.Colors.BLUE),
+        ("剧本分析已完成，但保存失败，请重试", scripts_mod.ft.Colors.RED),
+    ]
+    assert refresh_calls == []
+    assert shown_dialogs == []
+    assert script.analysis_result is None

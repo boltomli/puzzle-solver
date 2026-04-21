@@ -1,20 +1,13 @@
 #!/bin/bash
-# Environment setup for puzzle-solver Repository Abstraction mission
+# Environment setup for SQLite + SQLModel migration mission
 # Idempotent — safe to run multiple times
 
-cd D:\exp\puzzle-solver
+cd C:\exp\puzzle-solver
 
-# Ensure dependencies are installed
-if [ -f ".venv/Scripts/python" ]; then
-    .venv/Scripts/python -m pip install -e . --quiet 2>/dev/null || true
-elif [ -f ".venv/bin/python" ]; then
-    .venv/bin/python -m pip install -e . --quiet 2>/dev/null || true
+if command -v uv >/dev/null 2>&1; then
+    uv sync >/dev/null 2>&1 || true
+elif [ -f ".venv/Scripts/python" ]; then
+    .venv/Scripts/python -m pip install -e . >/dev/null 2>&1 || true
 fi
 
-# Verify baseline tests pass
-echo "Verifying baseline tests..."
-if [ -f ".venv/Scripts/python" ]; then
-    .venv/Scripts/python -m pytest tests/ -q --tb=line 2>&1 | tail -3
-elif [ -f ".venv/bin/python" ]; then
-    .venv/bin/python -m pytest tests/ -q --tb=line 2>&1 | tail -3
-fi
+echo "Environment prepared for SQLite migration mission."

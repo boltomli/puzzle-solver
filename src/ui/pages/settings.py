@@ -12,7 +12,7 @@ from src.services.config import load_config, save_config
 from src.ui.state import app_state
 
 
-def build_settings_tab(page: ft.Page) -> ft.Control:
+def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
     """Build and return the settings tab control tree.
 
     Provides:
@@ -187,19 +187,19 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
             _show_snackbar(f"加载模型失败: {exc}", ft.Colors.RED)
 
     # --- Action buttons ---
-    save_button = ft.ElevatedButton(
+    save_button = ft.Button(
         "保存配置",
         icon=ft.Icons.SAVE,
         on_click=on_save_config,
     )
 
-    test_button = ft.ElevatedButton(
+    test_button = ft.Button(
         "测试连接",
         icon=ft.Icons.WIFI,
         on_click=on_test_connection,
     )
 
-    load_models_button = ft.ElevatedButton(
+    load_models_button = ft.Button(
         "加载模型列表",
         icon=ft.Icons.REFRESH,
         on_click=on_load_models,
@@ -257,8 +257,12 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
                     return
                 app_state.delete_project(proj_id)
                 dlg.open = False
+                if dlg in page.overlay:
+                    page.overlay.remove(dlg)
                 page.update()
                 _show_snackbar(f"项目「{proj_name}」已删除", ft.Colors.GREEN)
+                if callable(on_project_deleted):
+                    on_project_deleted()
 
             def close_dlg(e):
                 dlg.open = False
@@ -282,11 +286,10 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
                 ),
                 actions=[
                     ft.TextButton("取消", on_click=close_dlg),
-                    ft.ElevatedButton(
+                    ft.Button(
                         "永久删除",
                         icon=ft.Icons.DELETE_FOREVER,
-                        color=ft.Colors.WHITE,
-                        bgcolor=ft.Colors.RED,
+                        style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED),
                         on_click=do_delete,
                     ),
                 ],
@@ -312,11 +315,10 @@ def build_settings_tab(page: ft.Page) -> ft.Control:
                             size=13,
                         ),
                         ft.Container(height=10),
-                        ft.ElevatedButton(
+                        ft.Button(
                             "删除此项目",
                             icon=ft.Icons.DELETE_FOREVER,
-                            color=ft.Colors.WHITE,
-                            bgcolor=ft.Colors.RED,
+                            style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED),
                             on_click=on_delete_project,
                         ),
                     ],
