@@ -56,11 +56,15 @@ def main(page: ft.Page):
                 description=desc_field.value.strip() or None,
             )
             dlg.open = False
+            if dlg in page.overlay:
+                page.overlay.remove(dlg)
             page.update()
             rebuild_content()
 
         def do_cancel(e):
             dlg.open = False
+            if dlg in page.overlay:
+                page.overlay.remove(dlg)
             page.update()
 
         dlg = ft.AlertDialog(
