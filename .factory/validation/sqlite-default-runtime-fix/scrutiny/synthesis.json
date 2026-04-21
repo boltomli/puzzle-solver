@@ -1,6 +1,6 @@
 {
   "milestone": "sqlite-default-runtime-fix",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -55,5 +55,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/sqlite-default-runtime-fix/scrutiny/synthesis.json"
 }
