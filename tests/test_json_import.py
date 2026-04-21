@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import src.ui.pages.review as review_mod
 from src.models.puzzle import (
     Character,
     ConfidenceLevel,
@@ -22,6 +23,8 @@ from src.models.puzzle import (
 )
 from src.storage.sqlite_repository import SQLiteRepository
 from src.storage.sqlite_store import SQLiteStore
+from src.ui.pages.matrix import build_location_time_data, build_matrix_data
+from src.ui.pages.review import _build_deduction_history
 from src.ui.state import AppState
 
 
@@ -412,3 +415,173 @@ def test_imported_project_edit_reload_cross_flow_parity(sqlite_state: AppState, 
     assert any(location.id == new_loc.id for location in reloaded.locations)
     assert any(fact.id == "fact-base" for fact in reloaded.facts)
     assert any(fact.id == new_fact.id for fact in reloaded.facts)
+
+
+def test_imported_project_matrix_and_review_surfaces_remain_in_parity_after_reload(
+    sqlite_state: AppState, tmp_path: Path
+) -> None:
+    source_project = Project(
+        id="matrix-review-import",
+        name="矩阵审查回归项目",
+        time_slots=[
+            TimeSlot(id="ts-09", label="09:00", description="早上", sort_order=0),
+            TimeSlot(id="ts-10", label="10:00", description="上午", sort_order=1),
+        ],
+        characters=[
+            Character(id="char-a", name="阿明"),
+            Character(id="char-b", name="阿红"),
+            Character(id="char-c", name="阿杰"),
+        ],
+        locations=[
+            Location(id="loc-hall", name="大厅"),
+            Location(id="loc-garden", name="花园"),
+            Location(id="loc-study", name="书房"),
+        ],
+        facts=[
+            Fact(
+                id="fact-imported",
+                character_id="char-a",
+                location_id="loc-hall",
+                time_slot="ts-09",
+                source_type=SourceType.script_explicit,
+                source_script_ids=["script-1"],
+            )
+        ],
+        deductions=[
+            Deduction(
+                id="ded-accept",
+                character_id="char-b",
+                location_id="loc-garden",
+                time_slot="ts-10",
+                confidence=ConfidenceLevel.high,
+                reasoning="接受前待审查",
+                supporting_script_ids=["script-1"],
+                status=DeductionStatus.pending,
+            ),
+            Deduction(
+                id="ded-reject",
+                character_id="char-c",
+                location_id="loc-study",
+                time_slot="ts-09",
+                confidence=ConfidenceLevel.medium,
+                reasoning="拒绝前待审查",
+                supporting_script_ids=["script-1"],
+                status=DeductionStatus.pending,
+            ),
+        ],
+        scripts=[
+            Script(
+                id="script-1",
+                title="导入剧本",
+                raw_text="导入文本",
+                metadata=ScriptMetadata(source_order=1),
+            )
+        ],
+    )
+    source_path = _write_project_json(tmp_path / "matrix-review.json", source_project)
+
+    imported = sqlite_state.import_project_from_json(source_path)
+
+    initial_matrix = build_matrix_data(imported)
+    initial_char_rows = {row["id"]: row for row in initial_matrix}
+    assert initial_char_rows["char-a"]["ts-09"] == "大厅"
+    assert initial_char_rows["char-a"]["ts-09_status"] == "confirmed"
+    assert initial_char_rows["char-b"]["ts-10"] == "(花园)"
+    assert initial_char_rows["char-b"]["ts-10_status"] == "pending"
+    assert initial_char_rows["char-c"]["ts-09"] == "(书房)"
+    assert initial_char_rows["char-c"]["ts-09_status"] == "pending"
+
+    initial_loc_matrix = build_location_time_data(imported)
+    initial_loc_rows = {row["id"]: row for row in initial_loc_matrix}
+    assert initial_loc_rows["loc-hall"]["ts-09"] == "阿明"
+    assert initial_loc_rows["loc-hall"]["ts-09_status"] == "confirmed"
+    assert initial_loc_rows["loc-garden"]["ts-10"] == "(阿红)"
+    assert initial_loc_rows["loc-garden"]["ts-10_status"] == "pending"
+    assert initial_loc_rows["loc-study"]["ts-09"] == "(阿杰)"
+    assert initial_loc_rows["loc-study"]["ts-09_status"] == "pending"
+
+    pending_before = sqlite_state.get_pending_deductions()
+    assert [ded.id for ded in pending_before] == ["ded-accept", "ded-reject"]
+    assert [ded.id for ded in sqlite_state.current_project.deductions if ded.status == DeductionStatus.pending] == [
+        "ded-accept",
+        "ded-reject",
+    ]
+
+    accepted_fact = sqlite_state.accept_deduction("ded-accept")
+    assert accepted_fact is not None
+    rejected_record = sqlite_state.reject_deduction("ded-reject", reason="与证词冲突")
+    assert rejected_record is not None
+    new_loc = sqlite_state.add_location(name="地下室")
+    new_fact = sqlite_state.add_fact(
+        character_id="char-c",
+        location_id=new_loc.id,
+        time_slot="ts-10",
+        source_type=SourceType.user_input,
+        source_evidence="补充事实",
+    )
+    assert new_fact is not None
+
+    imported_id = imported.id
+    sqlite_state.current_project = None
+    sqlite_state.load_project(imported_id)
+    reloaded = sqlite_state.current_project
+    assert reloaded is not None
+
+    reloaded_matrix = build_matrix_data(reloaded)
+    reloaded_char_rows = {row["id"]: row for row in reloaded_matrix}
+    assert reloaded_char_rows["char-a"]["ts-09"] == "大厅"
+    assert reloaded_char_rows["char-a"]["ts-09_status"] == "confirmed"
+    assert reloaded_char_rows["char-b"]["ts-10"] == "花园"
+    assert reloaded_char_rows["char-b"]["ts-10_status"] == "confirmed"
+    assert reloaded_char_rows["char-c"]["ts-09"] == ""
+    assert reloaded_char_rows["char-c"]["ts-09_status"] == "unknown"
+    assert reloaded_char_rows["char-c"][new_fact.time_slot] == "地下室"
+    assert reloaded_char_rows["char-c"][f"{new_fact.time_slot}_status"] == "confirmed"
+
+    reloaded_loc_matrix = build_location_time_data(
+        reloaded,
+        char_by_id={cid: character.name for cid, character in sqlite_state.cache.char_by_id.items()},
+    )
+    reloaded_loc_rows = {row["id"]: row for row in reloaded_loc_matrix}
+    assert reloaded_loc_rows["loc-hall"]["ts-09"] == "阿明"
+    assert reloaded_loc_rows["loc-hall"]["ts-09_status"] == "confirmed"
+    assert reloaded_loc_rows["loc-garden"]["ts-10"] == "阿红"
+    assert reloaded_loc_rows["loc-garden"]["ts-10_status"] == "confirmed"
+    assert reloaded_loc_rows["loc-study"]["ts-09"] == ""
+    assert reloaded_loc_rows["loc-study"]["ts-09_status"] == "unknown"
+    assert reloaded_loc_rows[new_loc.id]["ts-10"] == "阿杰"
+    assert reloaded_loc_rows[new_loc.id]["ts-10_status"] == "confirmed"
+
+    assert sqlite_state.get_pending_deductions() == []
+
+    original_app_state = review_mod.app_state
+    try:
+        review_mod.app_state = sqlite_state
+        history = _build_deduction_history(reloaded, sqlite_state.cache)
+    finally:
+        review_mod.app_state = original_app_state
+    assert history is not None
+    history_cards = [control for control in history.controls if getattr(control, "content", None) is not None]
+    assert len(history_cards) == 2
+
+    accepted_card = next(
+        card
+        for card in history_cards
+        if card.content.content.controls[0].controls[1].content.value == "已接受"
+    )
+    rejected_card = next(
+        card
+        for card in history_cards
+        if card.content.content.controls[0].controls[1].content.value == "已拒绝"
+    )
+
+    accepted_entities = accepted_card.content.content.controls[1].controls
+    assert accepted_entities[0].controls[1].value == "阿红"
+    assert accepted_entities[1].controls[1].value == "花园"
+    assert accepted_entities[2].controls[1].value == "10:00 (上午)"
+
+    rejected_entities = rejected_card.content.content.controls[1].controls
+    assert rejected_entities[0].controls[1].value == "阿杰"
+    assert rejected_entities[1].controls[1].value == "书房"
+    assert rejected_entities[2].controls[1].value == "09:00 (早上)"
+    assert rejected_card.content.content.controls[3].controls[1].value == "与证词冲突"
