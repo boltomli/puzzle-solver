@@ -11,6 +11,8 @@ identical to the original implementation so that existing callers
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from src.models.puzzle import (
     Character,
     CharacterStatus,
@@ -147,6 +149,12 @@ class AppState:
     def list_projects(self):
         """List all available projects as summaries."""
         return self._repo.list_projects()
+
+    def import_project_from_json(self, json_path: str | Path) -> Project:
+        """Import one user-selected legacy JSON project into active storage."""
+        if not isinstance(self.store, SQLiteStore):
+            raise NotImplementedError("JSON import is only supported for SQLite-backed storage")
+        return self._repo.import_project_from_json(json_path)
 
     # ------------------------------------------------------------------
     # Character management

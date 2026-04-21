@@ -368,6 +368,12 @@ class SQLiteStore:
         self.save_project(project)
         return project
 
+    def import_project_from_json(self, json_path: str | Path) -> Project:
+        source_path = Path(json_path)
+        project = Project.model_validate_json(source_path.read_text(encoding="utf-8"))
+        self.save_project(project)
+        return project
+
     def delete_project(self, project_id: str) -> None:
         self.create_schema()
         with self.session() as session:

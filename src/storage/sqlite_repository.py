@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
 from loguru import logger
 
@@ -113,6 +114,17 @@ class SQLiteRepository(Repository):
 
     def list_projects(self) -> list[ProjectSummary]:
         return self.store.list_projects()
+
+    def import_project_from_json(self, json_path: str | Path) -> Project:
+        project = self.store.import_project_from_json(json_path)
+        self.current_project = project
+        self._rebuild_indexes()
+        logger.info(
+            "SQLiteRepository.import_project_from_json: imported {!r} from {}",
+            project.name,
+            json_path,
+        )
+        return project
 
     def add_character(
         self,
