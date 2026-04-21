@@ -1,4 +1,6 @@
 import sqlite3
+import time
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -13,6 +15,7 @@ from src.models.puzzle import (
     SourceType,
     TimeSlot,
 )
+from src.storage.sqlite_schema import ProjectTable
 from src.storage.sqlite_store import SQLiteStore
 
 
@@ -138,3 +141,65 @@ def test_delete_project_removes_it_from_storage(store):
 
     with pytest.raises(FileNotFoundError):
         store.load_project(project.id)
+
+
+def test_list_projects_skips_corrupt_summary_rows(store):
+    valid_project = store.create_project(name="有效项目")
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO projects (
+                id, name, description, created_at, updated_at,
+                character_count, location_count, script_count, fact_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "broken-project",
+                "损坏项目",
+                "invalid summary row",
+                "not-a-datetime",
+                "still-not-a-datetime",
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
+        conn.commit()
+
+    summaries = store.list_projects()
+
+    assert [summary.id for summary in summaries] == [valid_project.id]
+
+
+@pytest.mark.parametrize(
+    ("project_count", "max_seconds"),
+    [
+        (120, 0.25),
+    ],
+)
+def test_list_projects_performance_smoke(store, project_count: int, max_seconds: float):
+    base_time = datetime(2026, 1, 1, 12, 0, 0)
+    with store.session() as session:
+        for idx in range(project_count):
+            session.add(
+                ProjectTable(
+                    id=f"project-{idx}",
+                    name=f"项目 {idx}",
+                    description="seeded",
+                    created_at=base_time + timedelta(seconds=idx),
+                    updated_at=base_time + timedelta(seconds=idx),
+                    character_count=idx % 5,
+                    location_count=idx % 7,
+                    script_count=idx % 3,
+                    fact_count=idx % 11,
+                )
+            )
+        session.commit()
+
+    start = time.perf_counter()
+    summaries = store.list_projects()
+    elapsed = time.perf_counter() - start
+
+    assert len(summaries) == project_count
+    assert elapsed < max_seconds

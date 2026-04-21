@@ -62,22 +62,35 @@ class SQLiteStore:
 
     def list_projects(self) -> list[ProjectSummary]:
         self.create_schema()
-        with self.session() as session:
-            rows = session.exec(select(ProjectTable).order_by(ProjectTable.updated_at.desc())).all()
-            return [
-                ProjectSummary(
-                    id=row.id,
-                    name=row.name,
-                    description=row.description,
-                    character_count=row.character_count,
-                    location_count=row.location_count,
-                    script_count=row.script_count,
-                    fact_count=row.fact_count,
-                    created_at=row.created_at,
-                    updated_at=row.updated_at,
+        with self.engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                """
+                SELECT id, name, description, character_count, location_count,
+                       script_count, fact_count, created_at, updated_at
+                FROM projects
+                ORDER BY updated_at DESC
+                """
+            ).fetchall()
+
+        summaries: list[ProjectSummary] = []
+        for row in rows:
+            try:
+                summaries.append(
+                    ProjectSummary(
+                        id=row[0],
+                        name=row[1],
+                        description=row[2],
+                        character_count=row[3],
+                        location_count=row[4],
+                        script_count=row[5],
+                        fact_count=row[6],
+                        created_at=row[7],
+                        updated_at=row[8],
+                    )
                 )
-                for row in rows
-            ]
+            except (TypeError, ValueError, ValidationError):
+                continue
+        return summaries
 
     def load_project(self, project_id: str) -> Project:
         self.create_schema()

@@ -176,6 +176,65 @@ def test_app_state_uses_sqlite_backend_factory(sqlite_state):
     assert isinstance(sqlite_state.store, SQLiteStore)
 
 
+def test_app_state_list_projects_ignores_corrupt_summary_rows(sqlite_state):
+    valid_project = sqlite_state.create_project("有效项目")
+    sqlite_state.current_project = None
+
+    import sqlite3
+
+    with sqlite3.connect(sqlite_state.store.db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO projects (
+                id, name, description, created_at, updated_at,
+                character_count, location_count, script_count, fact_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "broken-row",
+                "损坏行",
+                "bad timestamps",
+                "bad-value",
+                "bad-value",
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
+        conn.commit()
+
+    summaries = sqlite_state.list_projects()
+
+    assert [summary.id for summary in summaries] == [valid_project.id]
+
+
+def test_edited_project_reload_and_recency_metadata(sqlite_state):
+    first = sqlite_state.create_project("较早项目")
+    first_id = first.id
+    sqlite_state.current_project = None
+
+    second = sqlite_state.create_project("最近项目")
+    second_id = second.id
+    original_second_updated_at = second.updated_at
+
+    edited_char = sqlite_state.add_character("Alice")
+    sqlite_state.update_character(edited_char.id, name="Alice Updated")
+    edited_updated_at = sqlite_state.current_project.updated_at
+
+    sqlite_state.current_project = None
+    summaries = sqlite_state.list_projects()
+
+    assert [summary.id for summary in summaries[:2]] == [second_id, first_id]
+    second_summary = next(summary for summary in summaries if summary.id == second_id)
+    assert second_summary.updated_at >= edited_updated_at
+    assert second_summary.updated_at > original_second_updated_at
+
+    sqlite_state.load_project(second_id)
+    assert sqlite_state.current_project is not None
+    assert sqlite_state.current_project.characters[0].name == "Alice Updated"
+
+
 def test_add_deduction_blocked_by_fact_pending_and_rejection(sqlite_repo_with_project):
     char = sqlite_repo_with_project.add_character("Alice")
     loc = sqlite_repo_with_project.add_location("Library")
