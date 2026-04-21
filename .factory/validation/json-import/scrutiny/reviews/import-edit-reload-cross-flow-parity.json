@@ -1,0 +1,39 @@
+{
+  "featureId": "import-edit-reload-cross-flow-parity",
+  "reviewedAt": "2026-04-21T00:00:00Z",
+  "commitId": "1f9f947",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The reviewed commit only adds a regression test and does not change implementation code. Existing SQLite import/edit/reload paths already appear capable, but the new test does not actually verify the full claimed cross-flow behavior across matrix and review surfaces, so the feature's stated coverage is incomplete.",
+    "issues": [
+      {
+        "file": "tests/test_json_import.py",
+        "line": 297,
+        "severity": "blocking",
+        "description": "`test_imported_project_edit_reload_cross_flow_parity` claims to cover scripts, management, matrix, review, and deduction flows, but it never exercises matrix output (for example via `build_matrix_data`) or any review-facing pending/rejected presentation. It only checks persistence, cache indexes, and entity existence after reload, so matrix/review parity for imported projects is not actually verified by this feature."
+      },
+      {
+        "file": "tests/test_json_import.py",
+        "line": 297,
+        "severity": "blocking",
+        "description": "The feature description says to 'verify and fix' cross-flow parity, but commit `1f9f947` contains only test additions and no implementation changes. If parity had truly been broken, this feature would not address it; if parity was already correct, the delivered coverage still falls short of the claimed behavior because key matrix/review assertions are missing."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker completed this feature as test-only verification because the implementation already appeared correct, but the skill feedback marks that as a deviation. The refactor-worker procedure should explicitly say whether verification-only completion is acceptable when no code fix is needed.",
+      "evidence": "Mission handoff `2026-04-21T04-15-13-032Z__import-edit-reload-cross-flow-parity__eb14e038-3c9c-484a-b9e3-d20690d51e5e.json` says the worker found existing behavior already worked and added only `test_imported_project_edit_reload_cross_flow_parity`, with `skillFeedback.followedProcedure` set to false for this reason."
+    },
+    {
+      "area": "conventions",
+      "observation": "The mission's cross-flow expectations are not concretely encoded for matrix/review surfaces, which made it easy for a feature to claim end-to-end parity while asserting only storage/index state. Shared guidance should define what counts as matrix and review parity evidence for imported projects.",
+      "evidence": "`tests/test_json_import.py:297` does not assert `build_matrix_data(...)` output or review-surface behavior, while the feature description in mission `features.json` explicitly names scripts, management, matrix, review, and deduction flows."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review failed: the feature commit is test-only and the added regression does not substantiate the full claimed cross-flow parity, especially for matrix and review behavior after import/edit/reload."
+}

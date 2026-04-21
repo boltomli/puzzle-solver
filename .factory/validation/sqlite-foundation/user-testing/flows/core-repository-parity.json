@@ -1,0 +1,176 @@
+{
+  "milestone": "sqlite-foundation",
+  "groupId": "core-repository-parity",
+  "surface": "pytest",
+  "assertions": [
+    "VAL-CORE-001",
+    "VAL-CORE-002",
+    "VAL-CORE-003",
+    "VAL-CORE-004",
+    "VAL-CORE-005",
+    "VAL-CORE-006",
+    "VAL-CORE-007",
+    "VAL-CORE-008",
+    "VAL-CORE-009",
+    "VAL-CORE-010",
+    "VAL-CORE-011",
+    "VAL-CORE-012",
+    "VAL-CORE-013",
+    "VAL-CORE-014",
+    "VAL-CORE-015",
+    "VAL-CORE-016",
+    "VAL-CORE-017",
+    "VAL-CORE-018",
+    "VAL-CORE-019",
+    "VAL-CORE-020",
+    "VAL-CORE-021",
+    "VAL-CORE-022",
+    "VAL-CORE-023",
+    "VAL-CORE-024",
+    "VAL-CORE-025"
+  ],
+  "status": "pass",
+  "toolsUsed": [
+    "pytest",
+    ".venv\\\\Scripts\\\\python -m pytest tests\\\\test_sqlite_repository.py tests\\\\test_deduction.py tests\\\\test_cascade.py tests\\\\test_state.py -v"
+  ],
+  "frictions": [],
+  "blockers": [],
+  "evidence": [
+    {
+      "command": ".venv\\\\Scripts\\\\python -m pytest tests\\\\test_sqlite_repository.py tests\\\\test_deduction.py tests\\\\test_cascade.py tests\\\\test_state.py -v",
+      "observation": "Collected 133 tests and all 133 passed in 2.44s, including SQLite repository parity, deduction lifecycle, cascade cleanup, and AppState state-management behavior."
+    },
+    {
+      "command": ".venv\\\\Scripts\\\\python -m ruff check src tests",
+      "observation": "Ruff reported \"All checks passed!\" for src and tests."
+    }
+  ],
+  "assertionResults": [
+    {
+      "id": "VAL-CORE-001",
+      "status": "pass",
+      "reason": "test_create_project_immediately_usable verified create -> mutate works without reload."
+    },
+    {
+      "id": "VAL-CORE-002",
+      "status": "pass",
+      "reason": "test_list_projects_empty_and_multiple covered empty and multiple summary listing."
+    },
+    {
+      "id": "VAL-CORE-003",
+      "status": "pass",
+      "reason": "test_load_project_restores_complete_state verified full state restoration after load."
+    },
+    {
+      "id": "VAL-CORE-004",
+      "status": "pass",
+      "reason": "test_save_persists_updates_across_reload and TestAppStateProject::test_save_persists verified persistence across reload."
+    },
+    {
+      "id": "VAL-CORE-005",
+      "status": "pass",
+      "reason": "test_no_project_loaded_failures_are_safe plus no-project AppState tests verified safe failures."
+    },
+    {
+      "id": "VAL-CORE-006",
+      "status": "pass",
+      "reason": "SQLite parity test plus AppState character CRUD tests covered add/update/remove behavior."
+    },
+    {
+      "id": "VAL-CORE-007",
+      "status": "pass",
+      "reason": "SQLite parity test plus AppState location CRUD tests covered add/update/remove behavior."
+    },
+    {
+      "id": "VAL-CORE-008",
+      "status": "pass",
+      "reason": "SQLite parity test and AppState script tests covered title/text/notes/source-order semantics."
+    },
+    {
+      "id": "VAL-CORE-009",
+      "status": "pass",
+      "reason": "SQLite parity test and AppState fact tests covered fact add/remove persistence behavior."
+    },
+    {
+      "id": "VAL-CORE-010",
+      "status": "pass",
+      "reason": "SQLite parity test and AppState time-slot duplicate/validation tests covered HH:MM validation and dedup behavior."
+    },
+    {
+      "id": "VAL-CORE-011",
+      "status": "pass",
+      "reason": "AppState time-slot ordering test plus reload parity coverage preserved ordering behavior."
+    },
+    {
+      "id": "VAL-CORE-012",
+      "status": "pass",
+      "reason": "SQLite parity test and AppState hint tests covered add/update/remove semantics."
+    },
+    {
+      "id": "VAL-CORE-013",
+      "status": "pass",
+      "reason": "SQLite parity test verified ignored-entity normalization and lookup persistence."
+    },
+    {
+      "id": "VAL-CORE-014",
+      "status": "pass",
+      "reason": "SQLite parity test verified merge_character appends alias to target character without creating a new entity."
+    },
+    {
+      "id": "VAL-CORE-015",
+      "status": "pass",
+      "reason": "SQLite parity test verified merge_location appends alias to target location without creating a new entity."
+    },
+    {
+      "id": "VAL-CORE-016",
+      "status": "pass",
+      "reason": "test_add_deduction_blocked_by_fact_pending_and_rejection plus TestDeductionIndex tests covered dedup against fact/pending/rejection."
+    },
+    {
+      "id": "VAL-CORE-017",
+      "status": "pass",
+      "reason": "test_accept_reject_clear_pending_and_reload_parity and TestDeductionIndex::test_accept_updates_fact_index verified accept creates fact and removes pending triple."
+    },
+    {
+      "id": "VAL-CORE-018",
+      "status": "pass",
+      "reason": "test_accept_reject_clear_pending_and_reload_parity and TestDeductionIndex::test_reject_updates_rejection_index verified reject creates rejection and removes pending triple."
+    },
+    {
+      "id": "VAL-CORE-019",
+      "status": "pass",
+      "reason": "test_accept_reject_clear_pending_and_reload_parity asserted the default rejection reason 用户拒绝."
+    },
+    {
+      "id": "VAL-CORE-020",
+      "status": "pass",
+      "reason": "test_accept_reject_clear_pending_and_reload_parity and TestDeductionIndex::test_clear_pending_resets_pending_index verified clear-pending behavior."
+    },
+    {
+      "id": "VAL-CORE-021",
+      "status": "pass",
+      "reason": "Cascade tests plus SQLite reload cascade parity covered character deletion cleanup."
+    },
+    {
+      "id": "VAL-CORE-022",
+      "status": "pass",
+      "reason": "Cascade tests plus SQLite reload cascade parity covered location deletion cleanup."
+    },
+    {
+      "id": "VAL-CORE-023",
+      "status": "pass",
+      "reason": "Cascade tests plus SQLite reload cascade parity covered time-slot deletion cleanup."
+    },
+    {
+      "id": "VAL-CORE-024",
+      "status": "pass",
+      "reason": "Cascade script cleanup tests and SQLite reload cascade parity verified script deletion only removes references."
+    },
+    {
+      "id": "VAL-CORE-025",
+      "status": "pass",
+      "reason": "test_accept_reject_clear_pending_and_reload_parity and TestDeductionIndex::test_index_rebuilds_on_load verified dedup-sensitive compatibility state rebuild after reload."
+    }
+  ]
+}

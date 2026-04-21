@@ -1,0 +1,27 @@
+{
+  "milestone": "sqlite-default-performance",
+  "groupId": "pytest-default-performance",
+  "surface": "pytest",
+  "status": "pass",
+  "assertions": [
+    {"id": "VAL-PERF-001", "status": "pass", "evidence": "tests/test_sqlite_repository.py::test_app_state_uses_sqlite_backend_factory and tests/test_state.py::TestAppStateProject::test_list_projects passed"},
+    {"id": "VAL-PERF-002", "status": "pass", "evidence": "tests/test_sqlite_store.py::test_list_projects_skips_corrupt_summary_rows and tests/test_sqlite_repository.py::test_app_state_list_projects_ignores_corrupt_summary_rows passed"},
+    {"id": "VAL-PERF-003", "status": "pass", "evidence": "tests/test_sqlite_repository.py::test_create_project_immediately_usable passed"},
+    {"id": "VAL-PERF-004", "status": "pass", "evidence": "tests/test_sqlite_repository.py::test_edited_project_reload_and_recency_metadata passed"},
+    {"id": "VAL-PERF-005", "status": "pass", "evidence": "tests/test_sqlite_repository.py::test_edited_project_reload_and_recency_metadata passed with updated_at assertions"},
+    {"id": "VAL-PERF-006", "status": "pass", "evidence": "tests/test_sqlite_repository.py::test_app_state_uses_sqlite_backend_factory passed and confirms SQLiteStore backend"},
+    {"id": "VAL-PERF-007", "status": "pass", "evidence": "tests/test_json_import.py::test_import_json_project_creates_usable_sqlite_project and ::test_imported_project_edit_reload_cross_flow_parity passed in full suite"},
+    {"id": "VAL-PERF-008", "status": "pass", "evidence": "tests/test_performance_smoke.py::test_project_list_performance_smoke and tests/test_sqlite_store.py::test_list_projects_performance_smoke[120-0.25] passed"},
+    {"id": "VAL-PERF-009", "status": "pass", "evidence": "tests/test_performance_smoke.py::test_project_load_performance_smoke passed"},
+    {"id": "VAL-PERF-010", "status": "pass", "evidence": "tests/test_performance_smoke.py::test_core_write_path_performance_smoke passed"}
+  ],
+  "toolsUsed": ["pytest", "ruff"],
+  "frictions": [],
+  "blockers": [],
+  "commands": [
+    {"command": ".venv\\Scripts\\python -m pytest tests/test_performance_smoke.py tests/test_sqlite_store.py tests/test_sqlite_repository.py -v", "exitCode": 0},
+    {"command": ".venv\\Scripts\\python -m pytest tests/test_state.py tests/test_integration.py tests/test_e2e.py -v", "exitCode": 0},
+    {"command": ".venv\\Scripts\\python -m pytest tests/ -v", "exitCode": 0},
+    {"command": ".venv\\Scripts\\python -m ruff check src tests", "exitCode": 0}
+  ]
+}

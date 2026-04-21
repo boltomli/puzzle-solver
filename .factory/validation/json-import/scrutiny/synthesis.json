@@ -1,0 +1,53 @@
+{
+  "appliedUpdates": [],
+  "blockingIssues": [
+    {
+      "description": "Legacy round-1 review remains on disk, but the follow-up feature `json-import-matrix-review-parity-evidence` now adds the missing direct matrix/review assertions for imported projects. Current milestone evidence is sufficient for pass because the claimed parity gap is covered by commit 850a405 and its passing review report.",
+      "featureId": "import-edit-reload-cross-flow-parity",
+      "severity": "blocking"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills",
+      "suggestion": "Clarify in `refactor-worker` that verification-only completion is acceptable when investigation shows the implementation already satisfies the feature and the remaining deliverable is regression coverage/evidence.",
+      "evidence": "Both `json-import-failure-and-duplicate-handling` and `import-edit-reload-cross-flow-parity` handoffs flagged skill deviations around manual smoke or test-only completion even though the reviewed work was storage-layer or verification-focused.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "reason": "superseded-by-follow-up-evidence",
+      "observation": "Round-1 blocking review for `import-edit-reload-cross-flow-parity`"
+    }
+  ],
+  "round": 2,
+  "reviewsSummary": {
+    "passed": 3,
+    "failed": 1,
+    "total": 4,
+    "failedFeatures": [
+      "import-edit-reload-cross-flow-parity"
+    ]
+  },
+  "validatorsRun": {
+    "test": {
+      "exitCode": 0,
+      "passed": true,
+      "command": "uv run pytest tests/ -v"
+    },
+    "typecheck": {
+      "exitCode": 0,
+      "passed": true,
+      "command": "echo no typecheck configured"
+    },
+    "lint": {
+      "exitCode": 0,
+      "passed": true,
+      "command": "uv run ruff check src tests"
+    }
+  },
+  "previousRound": ".factory/validation/json-import/scrutiny/synthesis.json",
+  "milestone": "json-import",
+  "status": "pass"
+}

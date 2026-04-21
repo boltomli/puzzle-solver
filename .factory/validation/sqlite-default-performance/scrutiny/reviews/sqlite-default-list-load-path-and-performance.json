@@ -1,0 +1,15 @@
+{
+  "featureId": "sqlite-default-list-load-path-and-performance",
+  "reviewedAt": "2026-04-21T05:05:00Z",
+  "commitId": "f48a70c5660d037010c39df43ceb3d9cc23fd595",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Commit f48a70c hardens SQLite default project listing to skip corrupt summary rows and adds performance smoke coverage for default list/load/write flows. Review of the committed sqlite_store, sqlite_repository, and test additions found the implementation aligned with milestone scope and no high-confidence correctness or regression issue.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Pass. Default SQLite project list/load/write behavior is covered by direct regression and performance smoke tests, and corrupt summary rows no longer break the full list."
+}

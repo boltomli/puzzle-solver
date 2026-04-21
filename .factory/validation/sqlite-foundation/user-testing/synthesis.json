@@ -1,0 +1,48 @@
+{
+  "milestone": "sqlite-foundation",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 25,
+    "passed": 25,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CORE-001",
+    "VAL-CORE-002",
+    "VAL-CORE-003",
+    "VAL-CORE-004",
+    "VAL-CORE-005",
+    "VAL-CORE-006",
+    "VAL-CORE-007",
+    "VAL-CORE-008",
+    "VAL-CORE-009",
+    "VAL-CORE-010",
+    "VAL-CORE-011",
+    "VAL-CORE-012",
+    "VAL-CORE-013",
+    "VAL-CORE-014",
+    "VAL-CORE-015",
+    "VAL-CORE-016",
+    "VAL-CORE-017",
+    "VAL-CORE-018",
+    "VAL-CORE-019",
+    "VAL-CORE-020",
+    "VAL-CORE-021",
+    "VAL-CORE-022",
+    "VAL-CORE-023",
+    "VAL-CORE-024",
+    "VAL-CORE-025"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "validation-state.json",
+      "description": "Marked sqlite-foundation VAL-CORE-001 through VAL-CORE-025 as passed based on focused pytest evidence.",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null
+}
