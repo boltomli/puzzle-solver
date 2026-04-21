@@ -1,8 +1,11 @@
 """Tests for the scripts page logic — specifically the deduction creation from analysis facts."""
 
+from __future__ import annotations
+
 import shutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -257,3 +260,64 @@ class TestIsApiConfigured:
         )
         monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
         assert _is_api_configured() is False
+
+
+@pytest.mark.asyncio
+async def test_run_script_analysis_surfaces_save_failure_without_showing_results(
+    state, monkeypatch
+):
+    """Auto analysis should show explicit save-failure feedback and stop the success flow."""
+    import src.ui.pages.scripts as scripts_mod
+
+    monkeypatch.setattr(scripts_mod, "app_state", state)
+    state.create_project(name="Test")
+    script = state.add_script(raw_text="Some script text", title="Scene 1")
+
+    analysis_result = {
+        "characters_mentioned": [{"name": "Alice"}],
+        "locations_mentioned": [],
+        "time_references": [],
+        "direct_facts": [],
+    }
+
+    class _StubDeductionService:
+        async def analyze_script(self, proj, current_script, ts_by_id):
+            assert proj is state.current_project
+            assert current_script.id == script.id
+            assert ts_by_id == state.cache.ts_by_id
+            return analysis_result
+
+    shown_messages: list[tuple[str, str | None]] = []
+    refresh_calls: list[str] = []
+    shown_dialogs: list[dict] = []
+
+    import src.services.deduction as deduction_mod
+
+    monkeypatch.setattr(deduction_mod, "DeductionService", _StubDeductionService)
+    monkeypatch.setattr(
+        state,
+        "save_script_analysis",
+        lambda script_id, result: False,
+    )
+    monkeypatch.setattr(
+        scripts_mod,
+        "_show_analysis_results_dialog",
+        lambda *args, **kwargs: shown_dialogs.append({"args": args, "kwargs": kwargs}),
+    )
+
+    page = SimpleNamespace(update=lambda: None)
+
+    await scripts_mod._run_script_analysis(
+        page,
+        script.id,
+        lambda: refresh_calls.append("refresh"),
+        lambda message, color=None: shown_messages.append((message, color)),
+    )
+
+    assert shown_messages == [
+        ("🤖 正在分析剧本...", scripts_mod.ft.Colors.BLUE),
+        ("剧本分析已完成，但保存失败，请重试", scripts_mod.ft.Colors.RED),
+    ]
+    assert refresh_calls == []
+    assert shown_dialogs == []
+    assert script.analysis_result is None

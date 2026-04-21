@@ -1182,7 +1182,15 @@ async def _run_script_analysis(
         service = DeductionService()
         result = await service.analyze_script(proj, script, ts_by_id=app_state.cache.ts_by_id)
 
-        app_state.save_script_analysis(script_id, result)
+        saved = app_state.save_script_analysis(script_id, result)
+        if not saved:
+            logger.warning(
+                "scripts: analyze_script save failed for script_id={!r} current_project_id={!r}",
+                script_id,
+                app_state.current_project.id if app_state.current_project else None,
+            )
+            show_snackbar("剧本分析已完成，但保存失败，请重试", ft.Colors.RED)
+            return
         logger.info(
             "scripts: analyze_script done script_id={!r} direct_facts={}",
             script_id,
