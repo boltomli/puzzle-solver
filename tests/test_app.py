@@ -48,6 +48,8 @@ class _StubAppState:
         self.current_project = None
         self.project_summaries: list[ProjectSummary] = []
         self.create_calls: list[_CreateCall] = []
+        self.import_calls: list[str] = []
+        self.imported_project = None
 
     def list_projects(self) -> list[ProjectSummary]:
         return list(self.project_summaries)
@@ -76,6 +78,11 @@ class _StubAppState:
 
     def load_project(self, project_id: str) -> None:
         return None
+
+    def import_project_from_json(self, json_path: str):
+        self.import_calls.append(json_path)
+        self.current_project = self.imported_project
+        return self.imported_project
 
 
 def _make_page() -> ft.Page:
@@ -110,9 +117,16 @@ def _find_button_by_text(control, text: str):
         label = getattr(child, "text", None)
         if label is None:
             label = getattr(child, "content", None)
-        if isinstance(child, (ft.TextButton, ft.ElevatedButton)) and label == text:
+        if isinstance(child, (ft.TextButton, ft.ElevatedButton, ft.OutlinedButton)) and label == text:
             return child
     raise AssertionError(f"Button with text {text!r} not found")
+
+
+def _find_control_by_tooltip(control, tooltip: str):
+    for child in _walk_controls(control):
+        if getattr(child, "tooltip", None) == tooltip:
+            return child
+    raise AssertionError(f"Control with tooltip {tooltip!r} not found")
 
 
 def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
@@ -149,3 +163,152 @@ def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
     appbar = project_view.controls[0]
     assert isinstance(appbar, ft.AppBar)
     assert appbar.title.value == "🔍 案件一"
+
+
+def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(monkeypatch):
+    stub_state = _StubAppState()
+    imported_at = datetime(2026, 4, 21, 13, 0)
+    stub_state.imported_project = type(
+        "Project",
+        (),
+        {"id": "imported-project", "name": "旧项目", "updated_at": imported_at},
+    )()
+    stub_state.project_summaries = [
+        ProjectSummary(
+            id="imported-project",
+            name="旧项目",
+            description="来自旧版 JSON",
+            character_count=1,
+            location_count=1,
+            script_count=1,
+            fact_count=1,
+            created_at=imported_at,
+            updated_at=imported_at,
+        )
+    ]
+    monkeypatch.setattr(app_module, "app_state", stub_state)
+
+    captured_picker: dict[str, ft.FilePicker] = {}
+
+    class _StubFilePicker:
+        def __init__(self, on_result=None):
+            self.on_result = on_result
+            self.pick_calls: list[dict] = []
+            captured_picker["picker"] = self
+
+        def pick_files(self, **kwargs):
+            self.pick_calls.append(kwargs)
+
+    monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
+
+    page = _make_page()
+    app_module.main(page)
+
+    landing = page.controls[0]
+    import_button = _find_button_by_text(landing, "导入旧版 JSON")
+    import_button.on_click(None)
+
+    picker = captured_picker["picker"]
+    assert picker.pick_calls == [
+        {
+            "allow_multiple": False,
+            "allowed_extensions": ["json"],
+            "dialog_title": "选择旧版 JSON 项目文件",
+        }
+    ]
+    assert "picker" in captured_picker
+
+    picker.on_result(
+        type(
+            "FilePickerResultEvent",
+            (),
+            {
+                "files": [
+                    type("PickedFile", (), {"path": r"C:\legacy\case.json"})(),
+                ]
+            },
+        )()
+    )
+
+    assert stub_state.import_calls == [r"C:\legacy\case.json"]
+    assert stub_state.current_project is not None
+    assert stub_state.current_project.name == "旧项目"
+    assert len(page.controls) == 1
+    project_view = page.controls[0]
+    appbar = project_view.controls[0]
+    assert isinstance(appbar, ft.AppBar)
+    assert appbar.title.value == "🔍 旧项目"
+    assert page.snack_bar is not None
+    assert page.snack_bar.content.value == "已导入项目：旧项目"
+
+
+def test_project_view_import_entrypoint_shows_error_feedback_when_import_fails(monkeypatch):
+    stub_state = _StubAppState()
+    current_at = datetime(2026, 4, 21, 14, 0)
+    stub_state.current_project = type(
+        "Project",
+        (),
+        {"id": "current-project", "name": "当前项目", "updated_at": current_at},
+    )()
+    stub_state.project_summaries = [
+        ProjectSummary(
+            id="current-project",
+            name="当前项目",
+            description=None,
+            character_count=0,
+            location_count=0,
+            script_count=0,
+            fact_count=0,
+            created_at=current_at,
+            updated_at=current_at,
+        )
+    ]
+
+    def _raise_import(json_path: str):
+        raise ValueError(f"无法导入 JSON 项目：{json_path}")
+
+    stub_state.import_project_from_json = _raise_import
+    monkeypatch.setattr(app_module, "app_state", stub_state)
+
+    captured_picker: dict[str, ft.FilePicker] = {}
+
+    class _StubFilePicker:
+        def __init__(self, on_result=None):
+            self.on_result = on_result
+            self.pick_calls: list[dict] = []
+            captured_picker["picker"] = self
+
+        def pick_files(self, **kwargs):
+            self.pick_calls.append(kwargs)
+
+    monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
+
+    page = _make_page()
+    app_module.main(page)
+
+    project_view = page.controls[0]
+    appbar = project_view.controls[0]
+    import_button = _find_control_by_tooltip(appbar, "导入旧版 JSON")
+    import_button.on_click(None)
+
+    picker = captured_picker["picker"]
+    picker.on_result(
+        type(
+            "FilePickerResultEvent",
+            (),
+            {
+                "files": [
+                    type("PickedFile", (), {"path": r"C:\legacy\broken.json"})(),
+                ]
+            },
+        )()
+    )
+
+    assert stub_state.current_project.name == "当前项目"
+    assert len(page.controls) == 1
+    current_view = page.controls[0]
+    current_appbar = current_view.controls[0]
+    assert isinstance(current_appbar, ft.AppBar)
+    assert current_appbar.title.value == "🔍 当前项目"
+    assert page.snack_bar is not None
+    assert page.snack_bar.content.value == "导入失败：无法导入 JSON 项目：C:\\legacy\\broken.json"

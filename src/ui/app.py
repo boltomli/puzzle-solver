@@ -92,6 +92,41 @@ def main(page: ft.Page):
         dlg.open = True
         page.update()
 
+    def import_project_from_picker_result(result) -> None:
+        selected_files = getattr(result, "files", None) or []
+        if not selected_files:
+            return
+
+        selected_path = getattr(selected_files[0], "path", None)
+        if not selected_path:
+            page.snack_bar = ft.SnackBar(ft.Text("未选择有效的 JSON 文件"))
+            page.snack_bar.open = True
+            page.update()
+            return
+
+        try:
+            project = app_state.import_project_from_json(selected_path)
+        except (ValueError, OSError, NotImplementedError) as exc:
+            page.snack_bar = ft.SnackBar(ft.Text(f"导入失败：{exc}"), bgcolor=ft.Colors.RED)
+            page.snack_bar.open = True
+            page.update()
+            return
+
+        page.snack_bar = ft.SnackBar(ft.Text(f"已导入项目：{project.name}"))
+        page.snack_bar.open = True
+        rebuild_content()
+
+    file_picker = ft.FilePicker()
+    file_picker.on_result = import_project_from_picker_result
+    page.overlay.append(file_picker)
+
+    def show_import_project_dialog(e):
+        file_picker.pick_files(
+            allow_multiple=False,
+            allowed_extensions=["json"],
+            dialog_title="选择旧版 JSON 项目文件",
+        )
+
     # --- Tab content stubs ---
     def scripts_content():
         return build_scripts_tab(page)
@@ -117,13 +152,16 @@ def main(page: ft.Page):
         page.overlay.clear()
 
         if app_state.current_project is None:
-            page.controls.append(_build_landing_page(page, show_create_project_dialog))
+            page.controls.append(
+                _build_landing_page(page, show_create_project_dialog, show_import_project_dialog)
+            )
         else:
             page.controls.append(
                 _build_project_view(
                     page,
                     on_project_change=on_project_change,
                     show_create_project_dialog=show_create_project_dialog,
+                    show_import_project_dialog=show_import_project_dialog,
                     toggle_theme=toggle_theme,
                     scripts_content=scripts_content,
                     matrix_content=matrix_content,
@@ -139,7 +177,9 @@ def main(page: ft.Page):
     rebuild_content()
 
 
-def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control:
+def _build_landing_page(
+    page: ft.Page, show_create_project_dialog, show_import_project_dialog
+) -> ft.Control:
     """Build the welcome / project selection landing page."""
     projects = app_state.list_projects()
 
@@ -163,6 +203,11 @@ def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control
                         icon=ft.Icons.ADD,
                         on_click=show_create_project_dialog,
                         style=ft.ButtonStyle(padding=20),
+                    ),
+                    ft.OutlinedButton(
+                        "导入旧版 JSON",
+                        icon=ft.Icons.UPLOAD_FILE,
+                        on_click=show_import_project_dialog,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -246,6 +291,11 @@ def _build_landing_page(page: ft.Page, show_create_project_dialog) -> ft.Control
                     on_click=show_create_project_dialog,
                     style=ft.ButtonStyle(padding=20),
                 ),
+                ft.OutlinedButton(
+                    "导入旧版 JSON",
+                    icon=ft.Icons.UPLOAD_FILE,
+                    on_click=show_import_project_dialog,
+                ),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=10,
@@ -260,6 +310,7 @@ def _build_project_view(
     page: ft.Page,
     on_project_change,
     show_create_project_dialog,
+    show_import_project_dialog,
     toggle_theme,
     scripts_content,
     matrix_content,
@@ -365,6 +416,12 @@ def _build_project_view(
                 icon=ft.Icons.ADD,
                 tooltip="新建项目",
                 on_click=show_create_project_dialog,
+                icon_color=ft.Colors.WHITE,
+            ),
+            ft.IconButton(
+                icon=ft.Icons.UPLOAD_FILE,
+                tooltip="导入旧版 JSON",
+                on_click=show_import_project_dialog,
                 icon_color=ft.Colors.WHITE,
             ),
             ft.IconButton(
