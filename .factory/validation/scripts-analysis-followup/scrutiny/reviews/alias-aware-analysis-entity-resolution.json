@@ -1,0 +1,21 @@
+{
+  "featureId": "alias-aware-analysis-entity-resolution",
+  "reviewedAt": "2026-04-21T07:05:00Z",
+  "commitId": "1044496",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Reviewed the alias-aware analysis entity resolution changes in scripts and matrix surfaces against the feature contract and added regression coverage. I found no blocking or non-blocking correctness issues in the committed implementation.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Alias-aware entity matching is now implemented via duplicated helper logic in both `src/ui/pages/scripts.py` and `src/ui/pages/matrix.py`, but the shared library/guidance does not document a reusable pattern or common helper location for canonical-name-or-alias resolution even though this feature's preconditions called for centralized logic.",
+      "evidence": "`src/ui/pages/scripts.py` adds `_resolve_character_name` / `_resolve_location_name` plus handled helpers, while `src/ui/pages/matrix.py` adds separate `_is_character_handled` / `_is_location_handled` implementations with the same canonical-or-alias matching behavior. `.factory/library/patterns.md` and mission `AGENTS.md` document tested pure helpers but do not mention a shared alias-resolution pattern."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The feature satisfies the requested behavior: reopened analysis/pending-entity checks now treat merged aliases as handled, and direct-fact deduction creation resolves aliases to existing canonical entities. Regression tests directly cover both claimed behaviors, and I did not identify correctness or regression defects in the reviewed diff."
+}

@@ -1,0 +1,46 @@
+{
+  "milestone": "scripts-analysis-followup",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd C:\\exp\\puzzle-solver && uv run pytest tests/ -v",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "echo no typecheck configured",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cd C:\\exp\\puzzle-solver && uv run ruff check src tests",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "library",
+      "suggestion": "Document a shared alias-resolution pattern/helper location for canonical-name-or-alias matching used by script-analysis and matrix surfaces.",
+      "evidence": "The alias-aware-analysis review found duplicated canonical-or-alias matching logic in `src/ui/pages/scripts.py` and `src/ui/pages/matrix.py`, while `.factory/library/patterns.md` and mission guidance do not describe a reusable pattern.",
+      "isSystemic": false
+    },
+    {
+      "target": "library",
+      "suggestion": "Record that `save_script_analysis(...)` is a boolean persistence contract and UI callers must branch on failure instead of proceeding with success UI.",
+      "evidence": "The save-failure review found `src/ui/pages/scripts.py` now depends on the boolean return from `save_script_analysis(...)`, but `.factory/library/patterns.md` does not document this script-analysis flow expectation.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
