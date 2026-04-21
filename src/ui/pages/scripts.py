@@ -24,45 +24,71 @@ def _is_api_configured() -> bool:
     return bool(config.get("api_base_url") and config.get("model"))
 
 
-def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
-    """Convert a single direct_fact from analysis into a pending Deduction.
+def _resolve_character_name(proj, name: str):
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return None
+    for char in proj.characters:
+        if char.name.lower() == normalized:
+            return char
+        if any(alias.lower() == normalized for alias in char.aliases):
+            return char
+    return None
 
-    Maps character_name and location_name back to IDs from the project.
-    Maps time_slot label back to a TimeSlot ID.
-    Returns True if the deduction was successfully created.
-    """
+
+def _resolve_location_name(proj, name: str):
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return None
+    for loc in proj.locations:
+        if loc.name.lower() == normalized:
+            return loc
+        if any(alias.lower() == normalized for alias in loc.aliases):
+            return loc
+    return None
+
+
+def _is_character_handled(proj, name: str) -> bool:
+    return _resolve_character_name(proj, name) is not None
+
+
+def _is_location_handled(proj, name: str) -> bool:
+    return _resolve_location_name(proj, name) is not None
+
+
+def _build_deduction_from_analysis_fact(proj, fact_dict: dict, script_id: str) -> Deduction | None:
+    """Resolve analysis fact names to existing entities and build a pending deduction."""
     char_name = fact_dict.get("character_name", "")
     loc_name = fact_dict.get("location_name", "")
     ts = fact_dict.get("time_slot", "")
     confidence_str = fact_dict.get("confidence", "medium")
     evidence = fact_dict.get("evidence", "")
 
-    char = next((c for c in proj.characters if c.name.lower() == char_name.lower()), None)
-    loc = next((lo for lo in proj.locations if lo.name.lower() == loc_name.lower()), None)
+    char = _resolve_character_name(proj, char_name)
+    loc = _resolve_location_name(proj, loc_name)
 
     if not char or not loc:
         logger.warning(
-            "_create_single_deduction: cannot resolve char={!r}(found={}) loc={!r}(found={}) ts={!r}",
+            "_build_deduction_from_analysis_fact: cannot resolve char={!r}(found={}) loc={!r}(found={}) ts={!r}",
             char_name,
             char is not None,
             loc_name,
             loc is not None,
             ts,
         )
-        return False
+        return None
 
-    # Use centralized ts_label_map from CacheManager
     ts_id = app_state.cache.ts_label_map.get(ts)
     if not ts_id:
-        logger.warning("_create_single_deduction: unknown time_slot label={!r}", ts)
-        return False
+        logger.warning("_build_deduction_from_analysis_fact: unknown time_slot label={!r}", ts)
+        return None
 
     try:
         conf = ConfidenceLevel(confidence_str)
     except ValueError:
         conf = ConfidenceLevel.medium
 
-    deduction = Deduction(
+    return Deduction(
         character_id=char.id,
         location_id=loc.id,
         time_slot=ts_id,
@@ -71,21 +97,34 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
         supporting_script_ids=[script_id],
         status=DeductionStatus.pending,
     )
+
+
+def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
+    """Convert a single direct_fact from analysis into a pending Deduction.
+
+    Maps character_name and location_name back to IDs from the project.
+    Maps time_slot label back to a TimeSlot ID.
+    Returns True if the deduction was successfully created.
+    """
+    deduction = _build_deduction_from_analysis_fact(proj, fact_dict, script_id)
+    if not deduction:
+        return False
+
     added = app_state.add_deduction(deduction)
     if added:
         logger.info(
             "_create_single_deduction: created char={!r} loc={!r} ts={!r} conf={}",
-            char_name,
-            loc_name,
-            ts,
-            conf,
+            fact_dict.get("character_name", ""),
+            fact_dict.get("location_name", ""),
+            fact_dict.get("time_slot", ""),
+            deduction.confidence,
         )
     else:
         logger.debug(
             "_create_single_deduction: skipped duplicate char={!r} loc={!r} ts={!r}",
-            char_name,
-            loc_name,
-            ts,
+            fact_dict.get("character_name", ""),
+            fact_dict.get("location_name", ""),
+            fact_dict.get("time_slot", ""),
         )
     return added
 
@@ -93,49 +132,14 @@ def _create_single_deduction(proj, fact_dict: dict, script_id: str) -> bool:
 def _create_deductions_from_facts(proj, direct_facts: list[dict], script_id: str) -> int:
     """Convert direct_facts from analysis into pending Deduction objects.
 
-    Maps character_name and location_name back to IDs from the project.
+    Resolves character and location names by canonical name or merged alias.
     Maps time_slot labels back to TimeSlot IDs.
     Returns the number of deductions successfully created.
     """
-    # Use centralized ts_label_map from CacheManager
-    ts_label_map = app_state.cache.ts_label_map
-
     created = 0
     for df in direct_facts:
-        char_name = df.get("character_name", "")
-        loc_name = df.get("location_name", "")
-        ts = df.get("time_slot", "")
-        confidence_str = df.get("confidence", "medium")
-        evidence = df.get("evidence", "")
-
-        # Map names to IDs
-        char = next((c for c in proj.characters if c.name.lower() == char_name.lower()), None)
-        loc = next((lo for lo in proj.locations if lo.name.lower() == loc_name.lower()), None)
-
-        # Skip if we can't resolve both character and location
-        if not char or not loc:
-            continue
-        # Map time_slot label to ID
-        ts_id = ts_label_map.get(ts)
-        if not ts_id:
-            continue
-
-        # Map confidence string to enum
-        try:
-            conf = ConfidenceLevel(confidence_str)
-        except ValueError:
-            conf = ConfidenceLevel.medium
-
-        deduction = Deduction(
-            character_id=char.id,
-            location_id=loc.id,
-            time_slot=ts_id,
-            confidence=conf,
-            reasoning=evidence or f"剧本分析：{char_name} 在 {ts} 位于 {loc_name}",
-            supporting_script_ids=[script_id],
-            status=DeductionStatus.pending,
-        )
-        if app_state.add_deduction(deduction):
+        deduction = _build_deduction_from_analysis_fact(proj, df, script_id)
+        if deduction and app_state.add_deduction(deduction):
             created += 1
 
     return created
@@ -597,7 +601,7 @@ def _show_analysis_results_dialog(
             is_new = ch.get("is_new", False)
             context = ch.get("context", "")
             row_controls: list[ft.Control] = [ft.Text(name, weight=ft.FontWeight.BOLD)]
-            if is_new:
+            if is_new and not _is_character_handled(proj, name):
                 row_controls.append(
                     ft.Container(
                         content=ft.Text("新发现", size=11, color=ft.Colors.WHITE),
@@ -611,9 +615,9 @@ def _show_analysis_results_dialog(
 
             right_controls: list[ft.Control] = []
             is_ignored_char = app_state.is_entity_ignored(EntityKind.character, name)
-            if is_new and is_ignored_char:
+            if is_new and not _is_character_handled(proj, name) and is_ignored_char:
                 right_controls.append(ft.Text("已忽略", color=ft.Colors.GREY, size=13))
-            elif is_new:
+            elif is_new and not _is_character_handled(proj, name):
                 action_row = ft.Row(spacing=4)
 
                 def make_add_char(ch_name, row_ref):
@@ -734,7 +738,7 @@ def _show_analysis_results_dialog(
             is_new = lo.get("is_new", False)
             context = lo.get("context", "")
             row_controls: list[ft.Control] = [ft.Text(name, weight=ft.FontWeight.BOLD)]
-            if is_new:
+            if is_new and not _is_location_handled(proj, name):
                 row_controls.append(
                     ft.Container(
                         content=ft.Text("新发现", size=11, color=ft.Colors.WHITE),
@@ -748,9 +752,9 @@ def _show_analysis_results_dialog(
 
             right_controls: list[ft.Control] = []
             is_ignored_loc = app_state.is_entity_ignored(EntityKind.location, name)
-            if is_new and is_ignored_loc:
+            if is_new and not _is_location_handled(proj, name) and is_ignored_loc:
                 right_controls.append(ft.Text("已忽略", color=ft.Colors.GREY, size=13))
-            elif is_new:
+            elif is_new and not _is_location_handled(proj, name):
                 action_row = ft.Row(spacing=4)
 
                 def make_add_loc(lo_name, row_ref):

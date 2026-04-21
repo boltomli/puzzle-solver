@@ -26,6 +26,30 @@ def _is_api_configured() -> bool:
     return bool(config.get("api_base_url") and config.get("model"))
 
 
+def _is_character_handled(proj: Project, name: str) -> bool:
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return False
+    for char in proj.characters:
+        if char.name.lower() == normalized:
+            return True
+        if any(alias.lower() == normalized for alias in char.aliases):
+            return True
+    return False
+
+
+def _is_location_handled(proj: Project, name: str) -> bool:
+    normalized = (name or "").strip().lower()
+    if not normalized:
+        return False
+    for loc in proj.locations:
+        if loc.name.lower() == normalized:
+            return True
+        if any(alias.lower() == normalized for alias in loc.aliases):
+            return True
+    return False
+
+
 def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[str], list[str]]:
     """Check for unanalyzed scripts and entities not yet added from analyzed scripts.
 
@@ -36,8 +60,6 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
         if script.analysis_result is None:
             unanalyzed.append(script.title or f"剧本 #{script.metadata.source_order or '?'}")
 
-    existing_chars = {c.name.lower() for c in proj.characters}
-    existing_locs = {lo.name.lower() for lo in proj.locations}
     existing_times = {ts.label for ts in proj.time_slots}
 
     missing_chars: set[str] = set()
@@ -51,7 +73,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             name = ch.get("name", "").strip()
             if (
                 name
-                and name.lower() not in existing_chars
+                and not _is_character_handled(proj, name)
                 and not app_state.is_entity_ignored(EntityKind.character, name)
             ):
                 missing_chars.add(name)
@@ -59,7 +81,7 @@ def _check_pending_entities(proj: Project) -> tuple[list[str], list[str], list[s
             name = lo.get("name", "").strip()
             if (
                 name
-                and name.lower() not in existing_locs
+                and not _is_location_handled(proj, name)
                 and not app_state.is_entity_ignored(EntityKind.location, name)
             ):
                 missing_locs.add(name)

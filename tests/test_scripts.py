@@ -207,6 +207,35 @@ class TestCreateDeductionsFromFacts:
         created = _create_deductions_from_facts(proj, [], "script-1")
         assert created == 0
 
+    def test_resolves_character_and_location_aliases(self, state, project_with_entities):
+        """Merged aliases should resolve to existing canonical entities."""
+        from src.ui.pages.scripts import _create_deductions_from_facts
+
+        proj = project_with_entities
+        alice = proj.characters[0]
+        library = proj.locations[0]
+        state.merge_character("艾丽斯", alice.id)
+        state.merge_location("藏书室", library.id)
+
+        created = _create_deductions_from_facts(
+            proj,
+            [
+                {
+                    "character_name": "艾丽斯",
+                    "location_name": "藏书室",
+                    "time_slot": "14:00",
+                    "confidence": "high",
+                }
+            ],
+            "script-1",
+        )
+
+        assert created == 1
+        assert len(proj.deductions) == 1
+        deduction = proj.deductions[0]
+        assert deduction.character_id == alice.id
+        assert deduction.location_id == library.id
+
 
 class TestIsApiConfigured:
     """Tests for _is_api_configured helper."""
