@@ -118,7 +118,7 @@ def _find_button_by_text(control, text: str):
         label = getattr(child, "text", None)
         if label is None:
             label = getattr(child, "content", None)
-        if isinstance(child, (ft.TextButton, ft.ElevatedButton, ft.OutlinedButton)) and label == text:
+        if isinstance(child, (ft.TextButton, ft.ElevatedButton, ft.OutlinedButton, ft.Button)) and label == text:
             return child
     raise AssertionError(f"Button with text {text!r} not found")
 
@@ -141,8 +141,10 @@ def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
     create_button = _find_button_by_text(landing, "创建新项目")
     create_button.on_click(None)
 
-    assert len(page.overlay) == 1
-    dialog = page.overlay[0]
+    # Filter out FilePicker from overlay to find the dialog
+    dialogs = [c for c in page.overlay if isinstance(c, ft.AlertDialog)]
+    assert len(dialogs) == 1
+    dialog = dialogs[0]
     assert isinstance(dialog, ft.AlertDialog)
     assert dialog.open is True
 
@@ -157,7 +159,8 @@ def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
     assert stub_state.create_calls == [_CreateCall(name="案件一", description="初始描述")]
     assert stub_state.current_project is not None
     assert stub_state.current_project.name == "案件一"
-    assert page.overlay == []
+    # FilePicker is preserved in overlay after rebuild
+    assert all(isinstance(c, ft.FilePicker) for c in page.overlay)
     assert len(page.controls) == 1
 
     project_view = page.controls[0]
@@ -166,7 +169,7 @@ def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
     assert appbar.title.value == "🔍 案件一"
 
 
-def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(monkeypatch):
+def test_landing_page_import_entrypoint_picks_json_and_returns_to_landing(monkeypatch):
     stub_state = _StubAppState()
     imported_at = datetime(2026, 4, 21, 13, 0)
     stub_state.imported_project = type(
@@ -236,18 +239,15 @@ def test_landing_page_import_entrypoint_picks_json_and_opens_imported_project(mo
     )
 
     assert stub_state.import_calls == [r"C:\legacy\case.json"]
-    assert stub_state.current_project is not None
-    assert stub_state.current_project.name == "旧项目"
+    assert stub_state.current_project is None
     assert len(page.controls) == 1
-    project_view = page.controls[0]
-    appbar = project_view.controls[0]
-    assert isinstance(appbar, ft.AppBar)
-    assert appbar.title.value == "🔍 旧项目"
+    landing_after_import = page.controls[0]
+    _find_button_by_text(landing_after_import, "创建新项目")
     assert page.snack_bar is not None
-    assert page.snack_bar.content.value == "已导入项目：旧项目"
+    assert page.snack_bar.content.value == "已导入项目：旧项目（请在首页选择）"
 
 
-def test_project_view_import_entrypoint_shows_error_feedback_when_import_fails(monkeypatch):
+def test_project_view_import_entrypoint_shows_error_dialog_when_import_fails(monkeypatch):
     stub_state = _StubAppState()
     current_at = datetime(2026, 4, 21, 14, 0)
     stub_state.current_project = type(
@@ -325,5 +325,8 @@ def test_project_view_import_entrypoint_shows_error_feedback_when_import_fails(m
     current_appbar = current_view.controls[0]
     assert isinstance(current_appbar, ft.AppBar)
     assert current_appbar.title.value == "🔍 当前项目"
-    assert page.snack_bar is not None
-    assert page.snack_bar.content.value == "导入失败：无法导入 JSON 项目：C:\\legacy\\broken.json"
+    assert page.overlay
+    error_dialog = page.overlay[-1]
+    assert isinstance(error_dialog, ft.AlertDialog)
+    assert error_dialog.open is True
+    assert error_dialog.title.value == "导入失败"

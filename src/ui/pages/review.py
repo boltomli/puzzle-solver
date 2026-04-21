@@ -136,10 +136,9 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
                 content=ft.Text(f"确定要清除所有 {len(pending)} 条待审查推断吗？此操作不可撤销。"),
                 actions=[
                     ft.TextButton("取消", on_click=do_cancel),
-                    ft.ElevatedButton(
+                    ft.Button(
                         "确认清除",
-                        bgcolor=ft.Colors.RED,
-                        color=ft.Colors.WHITE,
+                        style=ft.ButtonStyle(bgcolor=ft.Colors.RED, color=ft.Colors.WHITE),
                         on_click=do_clear,
                     ),
                 ],
@@ -254,10 +253,9 @@ def _build_content(page: ft.Page, refresh) -> ft.Control:
 
             action_row = ft.Row(
                 controls=[
-                    ft.ElevatedButton(
+                    ft.Button(
                         "✅ 接受",
-                        bgcolor=ft.Colors.GREEN,
-                        color=ft.Colors.WHITE,
+                        style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE),
                         on_click=make_accept_handler(ded.id),
                     ),
                     ft.OutlinedButton(
@@ -504,10 +502,9 @@ def _show_reject_dialog(page, deduction_id, char_name, loc_name, time_slot, refr
         ),
         actions=[
             ft.TextButton("取消", on_click=do_cancel),
-            ft.ElevatedButton(
+            ft.Button(
                 "确认拒绝",
-                bgcolor=ft.Colors.RED,
-                color=ft.Colors.WHITE,
+                style=ft.ButtonStyle(bgcolor=ft.Colors.RED, color=ft.Colors.WHITE),
                 on_click=do_reject,
             ),
         ],

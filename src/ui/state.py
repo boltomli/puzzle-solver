@@ -3,10 +3,9 @@
 All UI mutations go through AppState methods which handle persistence.
 The Flet UI layer will call page.update() directly after state changes.
 
-AppState is a thin coordinator: it holds a JsonRepository instance and
-delegates all data operations to it.  Public method signatures remain
-identical to the original implementation so that existing callers
-(UI pages, tests, services) are unaffected.
+AppState is a thin coordinator: it holds a repository implementation and
+delegates all data operations to it. Public method signatures remain
+identical so existing callers (UI pages, tests, services) are unaffected.
 """
 
 from __future__ import annotations
@@ -38,6 +37,8 @@ from src.storage.sqlite_store import SQLiteStore
 
 
 def _make_repository(store: JsonStore | SQLiteStore | None = None) -> Repository:
+    if store is None:
+        return SQLiteRepository(store=SQLiteStore())
     if isinstance(store, SQLiteStore):
         return SQLiteRepository(store=store)
     return JsonRepository(store=store)

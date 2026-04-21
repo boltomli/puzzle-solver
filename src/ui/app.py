@@ -85,11 +85,17 @@ def main(page: ft.Page):
             ),
             actions=[
                 ft.TextButton("取消", on_click=do_cancel),
-                ft.ElevatedButton("创建", on_click=do_create),
+                ft.Button("创建", on_click=do_create),
             ],
         )
         page.overlay.append(dlg)
         dlg.open = True
+        page.update()
+
+    def _close_dialog(dlg: ft.AlertDialog) -> None:
+        dlg.open = False
+        if dlg in page.overlay:
+            page.overlay.remove(dlg)
         page.update()
 
     def import_project_from_picker_result(result) -> None:
@@ -107,12 +113,31 @@ def main(page: ft.Page):
         try:
             project = app_state.import_project_from_json(selected_path)
         except (ValueError, OSError, NotImplementedError) as exc:
-            page.snack_bar = ft.SnackBar(ft.Text(f"导入失败：{exc}"), bgcolor=ft.Colors.RED)
-            page.snack_bar.open = True
+            error_dialog = ft.AlertDialog(
+                title=ft.Text("导入失败", color=ft.Colors.RED),
+                content=ft.Column(
+                    controls=[
+                        ft.Text("无法导入所选 JSON 文件。"),
+                        ft.Text(f"错误类型：{type(exc).__name__}"),
+                        ft.Text(f"详细信息：{exc}", selectable=True),
+                        ft.Text(
+                            "请确认文件为旧版项目导出的 JSON，且结构完整。",
+                            size=12,
+                            color=ft.Colors.GREY,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=8,
+                ),
+                actions=[ft.TextButton("关闭", on_click=lambda e: _close_dialog(error_dialog))],
+            )
+            page.overlay.append(error_dialog)
+            error_dialog.open = True
             page.update()
             return
 
-        page.snack_bar = ft.SnackBar(ft.Text(f"已导入项目：{project.name}"))
+        app_state.current_project = None
+        page.snack_bar = ft.SnackBar(ft.Text(f"已导入项目：{project.name}（请在首页选择）"))
         page.snack_bar.open = True
         rebuild_content()
 
@@ -144,12 +169,15 @@ def main(page: ft.Page):
         return build_custom_tab(page)
 
     def settings_content():
-        return build_settings_tab(page)
+        return build_settings_tab(page, on_project_deleted=rebuild_content)
 
     def rebuild_content():
         """Rebuild the entire page content based on current state."""
         page.controls.clear()
+        # Preserve file_picker in overlay to keep it functional after rebuild
+        preserved_overlays = [c for c in page.overlay if isinstance(c, ft.FilePicker)]
         page.overlay.clear()
+        page.overlay.extend(preserved_overlays)
 
         if app_state.current_project is None:
             page.controls.append(
@@ -198,11 +226,10 @@ def _build_landing_page(
                         color=ft.Colors.GREY,
                     ),
                     ft.Container(height=20),
-                    ft.ElevatedButton(
+                    ft.Button(
                         "创建新项目",
                         icon=ft.Icons.ADD,
                         on_click=show_create_project_dialog,
-                        style=ft.ButtonStyle(padding=20),
                     ),
                     ft.OutlinedButton(
                         "导入旧版 JSON",
@@ -285,11 +312,10 @@ def _build_landing_page(
                     alignment=ft.MainAxisAlignment.CENTER,
                 ),
                 ft.Container(height=20),
-                ft.ElevatedButton(
+                ft.Button(
                     "创建新项目",
                     icon=ft.Icons.ADD,
                     on_click=show_create_project_dialog,
-                    style=ft.ButtonStyle(padding=20),
                 ),
                 ft.OutlinedButton(
                     "导入旧版 JSON",
@@ -334,7 +360,7 @@ def _build_project_view(
         dense=True,
         text_size=14,
         color=ft.Colors.WHITE,
-        border_color=ft.Colors.WHITE54,
+        border_color=ft.Colors.WHITE_54,
     )
 
     # --- Home button ---

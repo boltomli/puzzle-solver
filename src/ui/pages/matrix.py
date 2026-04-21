@@ -518,7 +518,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_ai_warn),
-                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_ai_warn),
+                    ft.Button("仍然继续推断", on_click=_proceed_ai_warn),
                 ],
             )
             page.overlay.append(_ai_warn_dlg)
@@ -550,7 +550,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         except Exception as exc:
             show_snackbar(f"消元推断失败: {str(exc)[:200]}", ft.Colors.RED)
 
-    ai_button = ft.ElevatedButton(
+    ai_button = ft.Button(
         "🤖 AI 推断",
         icon=ft.Icons.PSYCHOLOGY,
         on_click=run_ai_deduction if api_ok else None,
@@ -924,7 +924,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 ),
                 actions=[
                     ft.TextButton("取消", on_click=_close_focused_warn),
-                    ft.ElevatedButton("仍然继续推断", on_click=_proceed_focused_warn),
+                    ft.Button("仍然继续推断", on_click=_proceed_focused_warn),
                 ],
             )
             page.overlay.append(_focused_warn_dlg)
@@ -940,7 +940,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
         api_ok,
         "run_focused_deduction" if api_ok else "None",
     )
-    focused_button = ft.ElevatedButton(
+    focused_button = ft.Button(
         "🎯 开始推断",
         icon=ft.Icons.FILTER_ALT,
         on_click=run_focused_deduction if api_ok else None,
@@ -1292,7 +1292,7 @@ def _show_new_entities_dialog(
         ),
         actions=[
             ft.TextButton("跳过", on_click=do_cancel),
-            ft.ElevatedButton(
+            ft.Button(
                 "添加选中实体",
                 icon=ft.Icons.PLAYLIST_ADD,
                 on_click=do_add,

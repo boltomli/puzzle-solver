@@ -176,6 +176,21 @@ def test_app_state_uses_sqlite_backend_factory(sqlite_state):
     assert isinstance(sqlite_state.store, SQLiteStore)
 
 
+def test_app_state_defaults_to_sqlite_backend(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    state = AppState()
+    project = state.create_project("默认SQLite", time_slots=["09:00"])
+
+    assert isinstance(state.store, SQLiteStore)
+    assert state.store.db_path.name == "projects.db"
+    assert state.store.db_path.exists()
+
+    state.current_project = None
+    state.load_project(project.id)
+    assert state.current_project is not None
+    assert state.current_project.id == project.id
+
+
 def test_app_state_list_projects_ignores_corrupt_summary_rows(sqlite_state):
     valid_project = sqlite_state.create_project("有效项目")
     sqlite_state.current_project = None

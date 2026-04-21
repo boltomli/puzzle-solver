@@ -231,7 +231,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                 await _run_script_analysis(page, s.id, refresh, show_snackbar)
             refresh()
 
-        analyze_btn = ft.ElevatedButton(
+        analyze_btn = ft.Button(
             f"🤖 自动分析 {len(unanalyzed)} 个剧本",
             on_click=auto_analyze_all,
         )
@@ -322,7 +322,7 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
                         notes_field,
                         ft.Row(
                             controls=[
-                                ft.ElevatedButton(
+                                ft.Button(
                                     "保存剧本",
                                     icon=ft.Icons.SAVE,
                                     on_click=save_script,
@@ -397,11 +397,11 @@ def _build_content(page: ft.Page, refresh, show_snackbar) -> ft.Control:
 
             if script.analysis_result is not None:
                 action_buttons.append(
-                    ft.ElevatedButton(
+                    ft.Button(
                         "📊 查看分析结果",
                         icon=ft.Icons.ASSESSMENT,
                         on_click=make_view_results_handler(script.analysis_result, script.id),
-                        color=ft.Colors.GREEN,
+                        style=ft.ButtonStyle(color=ft.Colors.GREEN),
                     )
                 )
                 reanalyze_btn = ft.OutlinedButton(
@@ -548,7 +548,7 @@ def _show_analysis_results_dialog(
     # --- "全部添加实体" button ---
     has_new_entities = new_chars or new_locs or new_time_refs
     if has_new_entities:
-        add_all_entities_btn = ft.ElevatedButton(
+        add_all_entities_btn = ft.Button(
             "全部添加实体",
             icon=ft.Icons.PLAYLIST_ADD,
             tooltip="仅添加新发现的人物、地点和时间段，不包含推断事实",
@@ -683,7 +683,7 @@ def _show_analysis_results_dialog(
                             ),
                             actions=[
                                 ft.TextButton("取消", on_click=do_cancel_merge),
-                                ft.ElevatedButton("确认合并", on_click=do_merge),
+                                ft.Button("确认合并", on_click=do_merge),
                             ],
                         )
                         page.overlay.append(merge_dlg)
@@ -818,7 +818,7 @@ def _show_analysis_results_dialog(
                             ),
                             actions=[
                                 ft.TextButton("取消", on_click=do_cancel_merge),
-                                ft.ElevatedButton("确认合并", on_click=do_merge),
+                                ft.Button("确认合并", on_click=do_merge),
                             ],
                         )
                         page.overlay.append(merge_dlg)
@@ -967,7 +967,7 @@ def _show_analysis_results_dialog(
             )
         )
 
-        add_all_facts_btn = ft.ElevatedButton(
+        add_all_facts_btn = ft.Button(
             "全部添加到审查队列",
             icon=ft.Icons.PLAYLIST_ADD_CHECK,
         )
@@ -1141,11 +1141,10 @@ def _confirm_delete_script(
         content=ft.Text("此操作不可撤销", color=ft.Colors.GREY),
         actions=[
             ft.TextButton("取消", on_click=do_cancel),
-            ft.ElevatedButton(
+            ft.Button(
                 "删除",
                 on_click=do_delete,
-                color=ft.Colors.WHITE,
-                bgcolor=ft.Colors.RED,
+                style=ft.ButtonStyle(color=ft.Colors.WHITE, bgcolor=ft.Colors.RED),
             ),
         ],
     )

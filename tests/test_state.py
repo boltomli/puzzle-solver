@@ -15,6 +15,7 @@ from src.models.puzzle import (
     SourceType,
 )
 from src.storage.json_store import JsonStore
+from src.storage.sqlite_store import SQLiteStore
 from src.ui.state import AppState
 
 
@@ -34,6 +35,20 @@ def state(temp_data_dir):
 
 
 class TestAppStateProject:
+    def test_explicit_json_store_still_uses_json_backend(self, temp_data_dir):
+        state = AppState(store=JsonStore(data_dir=temp_data_dir))
+        state.create_project(name="JSON Backend")
+        assert isinstance(state.store, JsonStore)
+        files = list(temp_data_dir.glob("*.json"))
+        assert len(files) == 1
+
+    def test_explicit_sqlite_store_uses_sqlite_backend(self, temp_data_dir):
+        db_path = temp_data_dir / "projects.db"
+        state = AppState(store=SQLiteStore(db_path=db_path))
+        state.create_project(name="SQLite Backend")
+        assert isinstance(state.store, SQLiteStore)
+        assert db_path.exists()
+
     def test_create_project(self, state):
         state.create_project(name="Test Mystery", description="A test")
         assert state.current_project is not None
