@@ -1,0 +1,47 @@
+{
+  "milestone": "scripts-analysis-followup",
+  "groupId": "val-cross-012-014",
+  "surface": "pytest",
+  "assertions": [
+    "VAL-CROSS-012",
+    "VAL-CROSS-013",
+    "VAL-CROSS-014"
+  ],
+  "status": "pass",
+  "toolsUsed": [
+    "pytest"
+  ],
+  "frictions": [],
+  "blockers": [],
+  "evidence": [
+    {
+      "command": ".venv\\Scripts\\python -m pytest tests\\test_scripts.py tests\\test_app.py -v",
+      "observation": "Pytest collected 16 tests and all 16 passed in 1.48s, including the automatic analysis save-failure regression and the related app-level import/create regressions."
+    },
+    {
+      "command": ".venv\\Scripts\\python -m pytest tests\\test_matrix.py -k treats_aliases_as_handled -v",
+      "observation": "Pytest selected the reopened-analysis alias-handling regression and it passed, confirming merged aliases are treated as handled entities."
+    },
+    {
+      "command": ".venv\\Scripts\\python -m pytest tests\\test_scripts.py -k \"save_failure or resolves_character_and_location_aliases\" -v",
+      "observation": "Pytest selected 2 focused script-analysis regressions and both passed, covering explicit save-failure feedback and alias-aware direct-fact resolution."
+    }
+  ],
+  "assertionResults": [
+    {
+      "id": "VAL-CROSS-012",
+      "status": "pass",
+      "reason": "tests/test_scripts.py::test_run_script_analysis_surfaces_save_failure_without_showing_results passed, proving the UI shows explicit failure feedback and skips the saved-success flow when analysis persistence fails."
+    },
+    {
+      "id": "VAL-CROSS-013",
+      "status": "pass",
+      "reason": "tests/test_matrix.py::test_check_pending_entities_treats_aliases_as_handled passed, proving reopened analysis results do not treat merged aliases as unresolved entities."
+    },
+    {
+      "id": "VAL-CROSS-014",
+      "status": "pass",
+      "reason": "tests/test_scripts.py::TestCreateDeductionsFromFacts::test_resolves_character_and_location_aliases passed, proving direct facts resolve canonical names and aliases to the existing entities."
+    }
+  ]
+}
