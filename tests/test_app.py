@@ -159,8 +159,6 @@ def test_create_project_dialog_closes_and_is_removed_after_success(monkeypatch):
     assert stub_state.create_calls == [_CreateCall(name="案件一", description="初始描述")]
     assert stub_state.current_project is not None
     assert stub_state.current_project.name == "案件一"
-    # FilePicker is preserved in overlay after rebuild
-    assert all(isinstance(c, ft.FilePicker) for c in page.overlay)
     assert len(page.controls) == 1
 
     project_view = page.controls[0]
@@ -205,6 +203,10 @@ def test_landing_page_import_entrypoint_picks_json_and_returns_to_landing(monkey
             self.pick_calls.append(kwargs)
             await asyncio.sleep(0)
             self.awaited_pick_calls.append(kwargs)
+            # Return files directly (new API in Flet 0.80+)
+            return [
+                type("PickedFile", (), {"path": r"C:\legacy\case.json"})(),
+            ]
 
     monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
 
@@ -225,18 +227,6 @@ def test_landing_page_import_entrypoint_picks_json_and_returns_to_landing(monkey
     ]
     assert picker.awaited_pick_calls == picker.pick_calls
     assert "picker" in captured_picker
-
-    picker.on_result(
-        type(
-            "FilePickerResultEvent",
-            (),
-            {
-                "files": [
-                    type("PickedFile", (), {"path": r"C:\legacy\case.json"})(),
-                ]
-            },
-        )()
-    )
 
     assert stub_state.import_calls == [r"C:\legacy\case.json"]
     assert stub_state.current_project is None
@@ -288,6 +278,10 @@ def test_project_view_import_entrypoint_shows_error_dialog_when_import_fails(mon
             self.pick_calls.append(kwargs)
             await asyncio.sleep(0)
             self.awaited_pick_calls.append(kwargs)
+            # Return files directly (new API in Flet 0.80+)
+            return [
+                type("PickedFile", (), {"path": r"C:\legacy\broken.json"})(),
+            ]
 
     monkeypatch.setattr(app_module.ft, "FilePicker", _StubFilePicker)
 
@@ -307,17 +301,6 @@ def test_project_view_import_entrypoint_shows_error_dialog_when_import_fails(mon
             "dialog_title": "选择旧版 JSON 项目文件",
         }
     ]
-    picker.on_result(
-        type(
-            "FilePickerResultEvent",
-            (),
-            {
-                "files": [
-                    type("PickedFile", (), {"path": r"C:\legacy\broken.json"})(),
-                ]
-            },
-        )()
-    )
 
     assert stub_state.current_project.name == "当前项目"
     assert len(page.controls) == 1

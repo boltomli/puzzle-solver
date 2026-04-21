@@ -98,12 +98,12 @@ def main(page: ft.Page):
             page.overlay.remove(dlg)
         page.update()
 
-    def import_project_from_picker_result(result) -> None:
-        selected_files = getattr(result, "files", None) or []
-        if not selected_files:
+    async def _handle_import_files(files: list[ft.FilePickerFile] | None) -> None:
+        """Handle imported files from FilePicker."""
+        if not files:
             return
 
-        selected_path = getattr(selected_files[0], "path", None)
+        selected_path = getattr(files[0], "path", None)
         if not selected_path:
             page.snack_bar = ft.SnackBar(ft.Text("未选择有效的 JSON 文件"))
             page.snack_bar.open = True
@@ -141,16 +141,14 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         rebuild_content()
 
-    file_picker = ft.FilePicker()
-    file_picker.on_result = import_project_from_picker_result
-    page.overlay.append(file_picker)
-
     async def show_import_project_dialog(e):
-        await file_picker.pick_files(
+        files = await ft.FilePicker().pick_files(
             allow_multiple=False,
             allowed_extensions=["json"],
             dialog_title="选择旧版 JSON 项目文件",
         )
+        if files:
+            await _handle_import_files(files)
 
     # --- Tab content stubs ---
     def scripts_content():
@@ -174,10 +172,7 @@ def main(page: ft.Page):
     def rebuild_content():
         """Rebuild the entire page content based on current state."""
         page.controls.clear()
-        # Preserve file_picker in overlay to keep it functional after rebuild
-        preserved_overlays = [c for c in page.overlay if isinstance(c, ft.FilePicker)]
         page.overlay.clear()
-        page.overlay.extend(preserved_overlays)
 
         if app_state.current_project is None:
             page.controls.append(

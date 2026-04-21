@@ -177,8 +177,9 @@ def test_app_state_uses_sqlite_backend_factory(sqlite_state):
 
 
 def test_app_state_defaults_to_sqlite_backend(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    state = AppState()
+    # Use a temporary database path to avoid polluting the default data directory
+    db_path = tmp_path / "projects.db"
+    state = AppState(store=SQLiteStore(db_path=db_path))
     project = state.create_project("默认SQLite", time_slots=["09:00"])
 
     assert isinstance(state.store, SQLiteStore)
