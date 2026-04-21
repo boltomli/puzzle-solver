@@ -10,7 +10,12 @@ from src.models.puzzle import (
     ConfidenceLevel,
     Deduction,
     DeductionStatus,
+    EntityKind,
     Fact,
+    Hint,
+    HintScope,
+    HintType,
+    IgnoredEntity,
     Location,
     Project,
     ProjectSummary,
@@ -24,6 +29,8 @@ from src.storage.sqlite_schema import (
     CharacterTable,
     DeductionTable,
     FactTable,
+    HintTable,
+    IgnoredEntityTable,
     LocationTable,
     ProjectTable,
     RejectionTable,
@@ -98,6 +105,10 @@ class SQLiteStore:
             ).all()
             rejections = session.exec(
                 select(RejectionTable).where(RejectionTable.project_id == project_id)
+            ).all()
+            hints = session.exec(select(HintTable).where(HintTable.project_id == project_id)).all()
+            ignored_entities = session.exec(
+                select(IgnoredEntityTable).where(IgnoredEntityTable.project_id == project_id)
             ).all()
 
         return Project(
@@ -191,6 +202,25 @@ class SQLiteStore:
                     rejected_at=row.rejected_at,
                 )
                 for row in rejections
+            ],
+            hints=[
+                Hint(
+                    id=row.id,
+                    type=HintType(row.type),
+                    content=row.content,
+                    applies_to=HintScope.model_validate(row.applies_to_json or {}),
+                    created_at=row.created_at,
+                )
+                for row in hints
+            ],
+            ignored_entities=[
+                IgnoredEntity(
+                    id=row.id,
+                    kind=EntityKind(row.kind),
+                    name=row.name,
+                    created_at=row.created_at,
+                )
+                for row in ignored_entities
             ],
         )
 
@@ -305,6 +335,27 @@ class SQLiteStore:
                 )
                 for row in project.rejections
             )
+            session.add_all(
+                HintTable(
+                    id=row.id,
+                    project_id=project.id,
+                    type=row.type.value,
+                    content=row.content,
+                    applies_to_json=row.applies_to.model_dump(),
+                    created_at=row.created_at,
+                )
+                for row in project.hints
+            )
+            session.add_all(
+                IgnoredEntityTable(
+                    id=row.id,
+                    project_id=project.id,
+                    kind=row.kind.value,
+                    name=row.name,
+                    created_at=row.created_at,
+                )
+                for row in project.ignored_entities
+            )
             session.commit()
 
     def create_project(
@@ -334,4 +385,6 @@ class SQLiteStore:
         session.exec(delete(FactTable).where(FactTable.project_id == project_id))
         session.exec(delete(DeductionTable).where(DeductionTable.project_id == project_id))
         session.exec(delete(RejectionTable).where(RejectionTable.project_id == project_id))
+        session.exec(delete(HintTable).where(HintTable.project_id == project_id))
+        session.exec(delete(IgnoredEntityTable).where(IgnoredEntityTable.project_id == project_id))
         session.exec(delete(ProjectTable).where(ProjectTable.id == project_id))

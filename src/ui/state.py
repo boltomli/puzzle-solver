@@ -30,6 +30,15 @@ from src.models.puzzle import (
 from src.storage.cache_manager import CacheManager
 from src.storage.json_repository import JsonRepository
 from src.storage.json_store import JsonStore
+from src.storage.repository import Repository
+from src.storage.sqlite_repository import SQLiteRepository
+from src.storage.sqlite_store import SQLiteStore
+
+
+def _make_repository(store: JsonStore | SQLiteStore | None = None) -> Repository:
+    if isinstance(store, SQLiteStore):
+        return SQLiteRepository(store=store)
+    return JsonRepository(store=store)
 
 
 class AppState:
@@ -38,16 +47,16 @@ class AppState:
     Internally delegates all data operations to a :class:`JsonRepository`.
     """
 
-    def __init__(self, store: JsonStore | None = None) -> None:
-        self._repo = JsonRepository(store=store)
+    def __init__(self, store: JsonStore | SQLiteStore | None = None) -> None:
+        self._repo = _make_repository(store=store)
 
     # ------------------------------------------------------------------
     # Backward-compatibility attributes
     # ------------------------------------------------------------------
 
     @property
-    def store(self) -> JsonStore:
-        """Expose the underlying JsonStore for callers that access it directly."""
+    def store(self) -> JsonStore | SQLiteStore:
+        """Expose the underlying store for callers that access it directly."""
         return self._repo.store
 
     @property

@@ -111,3 +111,24 @@ class RejectionTable(SQLModel, table=True):
     reason: str
     from_deduction_id: str | None = None
     rejected_at: datetime
+
+
+class HintTable(SQLModel, table=True):
+    __tablename__ = "hints"
+
+    id: str = Field(primary_key=True)
+    project_id: str = Field(index=True)
+    type: str
+    content: str
+    applies_to_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime
+
+
+class IgnoredEntityTable(SQLModel, table=True):
+    __tablename__ = "ignored_entities"
+
+    id: str = Field(primary_key=True)
+    project_id: str = Field(index=True)
+    kind: str = Field(index=True)
+    name: str
+    created_at: datetime
