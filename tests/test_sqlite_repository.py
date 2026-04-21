@@ -1,6 +1,6 @@
 import pytest
 
-from src.models.puzzle import CharacterStatus, EntityKind, HintType
+from src.models.puzzle import CharacterStatus, ConfidenceLevel, Deduction, EntityKind, HintType
 from src.storage.sqlite_repository import SQLiteRepository
 from src.storage.sqlite_store import SQLiteStore
 from src.ui.state import AppState
@@ -20,6 +20,23 @@ def sqlite_repo_with_project(sqlite_repo):
 @pytest.fixture
 def sqlite_state(tmp_path):
     return AppState(store=SQLiteStore(db_path=tmp_path / "state.db"))
+
+
+def _make_deduction(
+    char_id: str,
+    loc_id: str,
+    ts_id: str,
+    *,
+    supporting_script_ids: list[str] | None = None,
+) -> Deduction:
+    return Deduction(
+        character_id=char_id,
+        location_id=loc_id,
+        time_slot=ts_id,
+        confidence=ConfidenceLevel.high,
+        reasoning="Test reasoning",
+        supporting_script_ids=supporting_script_ids or [],
+    )
 
 
 def test_create_project_immediately_usable(sqlite_repo):
@@ -157,3 +174,128 @@ def test_app_state_uses_sqlite_backend_factory(sqlite_state):
     assert sqlite_state.current_project is not None
     assert sqlite_state.current_project.characters[0].id == char.id
     assert isinstance(sqlite_state.store, SQLiteStore)
+
+
+def test_add_deduction_blocked_by_fact_pending_and_rejection(sqlite_repo_with_project):
+    char = sqlite_repo_with_project.add_character("Alice")
+    loc = sqlite_repo_with_project.add_location("Library")
+    ts1 = sqlite_repo_with_project.current_project.time_slots[0]
+    ts2 = sqlite_repo_with_project.current_project.time_slots[1]
+
+    sqlite_repo_with_project.add_fact(char.id, loc.id, ts1.id)
+    ded_pending = _make_deduction(char.id, loc.id, ts2.id)
+    ded_rejected = _make_deduction(char.id, loc.id, "custom-ts")
+
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ts1.id)) is False
+    assert sqlite_repo_with_project.add_deduction(ded_pending) is True
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ts2.id)) is False
+    assert sqlite_repo_with_project.add_deduction(ded_rejected) is True
+    sqlite_repo_with_project.reject_deduction(ded_rejected.id)
+    assert sqlite_repo_with_project.add_deduction(
+        _make_deduction(char.id, loc.id, ded_rejected.time_slot)
+    ) is False
+
+
+def test_accept_reject_clear_pending_and_reload_parity(sqlite_repo_with_project):
+    char = sqlite_repo_with_project.add_character("Alice")
+    loc = sqlite_repo_with_project.add_location("Library")
+    ts1 = sqlite_repo_with_project.current_project.time_slots[0]
+    ts2 = sqlite_repo_with_project.current_project.time_slots[1]
+
+    ded_accept = _make_deduction(char.id, loc.id, ts1.id, supporting_script_ids=["script-a"])
+    ded_reject = _make_deduction(char.id, loc.id, ts2.id)
+    ded_clear = _make_deduction(char.id, loc.id, "clear-slot")
+
+    sqlite_repo_with_project.add_deduction(ded_accept)
+    sqlite_repo_with_project.add_deduction(ded_reject)
+    sqlite_repo_with_project.add_deduction(ded_clear)
+
+    fact = sqlite_repo_with_project.accept_deduction(ded_accept.id)
+    rejection = sqlite_repo_with_project.reject_deduction(ded_reject.id, reason="")
+    removed = sqlite_repo_with_project.clear_pending_deductions()
+    project_id = sqlite_repo_with_project.current_project.id
+
+    assert fact is not None
+    assert fact.from_deduction_id == ded_accept.id
+    assert fact.source_script_ids == ["script-a"]
+    assert rejection is not None
+    assert rejection.reason == "用户拒绝"
+    assert rejection.from_deduction_id == ded_reject.id
+    assert removed == 1
+    assert sqlite_repo_with_project.get_pending_deductions() == []
+    assert ded_accept.status.value == "accepted"
+    assert ded_reject.status.value == "rejected"
+
+    sqlite_repo_with_project.current_project = None
+    sqlite_repo_with_project.load_project(project_id)
+    loaded = sqlite_repo_with_project.current_project
+    loaded_fact = next(f for f in loaded.facts if f.from_deduction_id == ded_accept.id)
+    loaded_rejection = next(r for r in loaded.rejections if r.from_deduction_id == ded_reject.id)
+    loaded_ded_accept = next(d for d in loaded.deductions if d.id == ded_accept.id)
+    loaded_ded_reject = next(d for d in loaded.deductions if d.id == ded_reject.id)
+
+    assert loaded_fact.id == fact.id
+    assert loaded_rejection.id == rejection.id
+    assert loaded_ded_accept.status.value == "accepted"
+    assert loaded_ded_reject.status.value == "rejected"
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ts1.id)) is False
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ts2.id)) is False
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ded_clear.time_slot))
+    assert sqlite_repo_with_project.add_deduction(_make_deduction(char.id, loc.id, ded_clear.time_slot)) is False
+
+
+def test_cascade_delete_and_script_cleanup_persist_across_reload(sqlite_repo_with_project):
+    alice = sqlite_repo_with_project.add_character("Alice")
+    bob = sqlite_repo_with_project.add_character("Bob")
+    library = sqlite_repo_with_project.add_location("Library")
+    kitchen = sqlite_repo_with_project.add_location("Kitchen")
+    ts1 = sqlite_repo_with_project.current_project.time_slots[0]
+    ts2 = sqlite_repo_with_project.current_project.time_slots[1]
+    script_to_remove = sqlite_repo_with_project.add_script("scene", title="Scene")
+    metadata_script = sqlite_repo_with_project.add_script("metadata", title="Metadata")
+    metadata_script.metadata.characters_mentioned = ["Alice", "Bob"]
+    sqlite_repo_with_project.save()
+
+    sqlite_repo_with_project.add_fact(
+        alice.id, library.id, ts1.id, source_script_ids=[script_to_remove.id]
+    )
+    surviving_fact = sqlite_repo_with_project.add_fact(bob.id, kitchen.id, ts2.id)
+    ded_char = _make_deduction(
+        alice.id, kitchen.id, ts2.id, supporting_script_ids=[script_to_remove.id]
+    )
+    ded_loc = _make_deduction(bob.id, library.id, ts2.id)
+    ded_ts = _make_deduction(bob.id, kitchen.id, ts1.id)
+    ded_rej = _make_deduction(alice.id, library.id, "rej-ts")
+    sqlite_repo_with_project.add_deduction(ded_char)
+    sqlite_repo_with_project.add_deduction(ded_loc)
+    sqlite_repo_with_project.add_deduction(ded_ts)
+    sqlite_repo_with_project.add_deduction(ded_rej)
+    sqlite_repo_with_project.reject_deduction(ded_rej.id)
+
+    assert sqlite_repo_with_project.remove_script(script_to_remove.id) is True
+    assert script_to_remove.id not in surviving_fact.source_script_ids
+    assert script_to_remove.id not in ded_char.supporting_script_ids
+
+    assert sqlite_repo_with_project.remove_character(alice.id) is True
+    assert "Alice" not in sqlite_repo_with_project.current_project.scripts[0].metadata.characters_mentioned
+    assert sqlite_repo_with_project.remove_location(library.id) is True
+    assert sqlite_repo_with_project.remove_time_slot(ts1.id) is True
+
+    project_id = sqlite_repo_with_project.current_project.id
+    sqlite_repo_with_project.current_project = None
+    sqlite_repo_with_project.load_project(project_id)
+    loaded = sqlite_repo_with_project.current_project
+
+    assert {c.id for c in loaded.characters} == {bob.id}
+    assert {location.id for location in loaded.locations} == {kitchen.id}
+    assert {t.id for t in loaded.time_slots} == {ts2.id}
+    assert [f.id for f in loaded.facts] == [surviving_fact.id]
+    assert loaded.facts[0].character_id == bob.id
+    assert loaded.facts[0].location_id == kitchen.id
+    assert loaded.facts[0].source_script_ids == []
+    assert all(d.character_id != alice.id for d in loaded.deductions)
+    assert all(d.location_id != library.id for d in loaded.deductions)
+    assert all(d.time_slot != ts1.id for d in loaded.deductions)
+    assert loaded.rejections == []
+    assert len(loaded.scripts) == 1
+    assert "Alice" not in loaded.scripts[0].metadata.characters_mentioned
