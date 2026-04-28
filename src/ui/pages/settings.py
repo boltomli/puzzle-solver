@@ -22,17 +22,44 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
     """
     config = load_config()
 
+    # --- Provider selection ---
+    current_provider = (config.get("provider") or "openai").strip().lower()
+
+    subtitle_text = ft.Text(
+        "配置用于 AI 推理的 OpenAI 兼容 API"
+        if current_provider != "anthropic"
+        else "配置 Anthropic Claude API",
+        color=ft.Colors.GREY,
+        size=13,
+    )
+
+    provider_dropdown = ft.Dropdown(
+        label="API 提供商",
+        value=current_provider,
+        options=[
+            ft.dropdown.Option(key="openai", text="OpenAI 兼容"),
+            ft.dropdown.Option(key="anthropic", text="Anthropic"),
+        ],
+        width=220,
+    )
+
     # --- API configuration fields ---
     base_url_field = ft.TextField(
         label="API Base URL",
         value=config.get("api_base_url", ""),
-        hint_text="https://api.openai.com/v1",
+        hint_text=(
+            "https://api.openai.com/v1"
+            if current_provider != "anthropic"
+            else "https://api.anthropic.com（可选，留空使用默认值）"
+        ),
     )
 
     api_key_field = ft.TextField(
         label="API Key（部分服务商可留空）",
         value=config.get("api_key", ""),
-        hint_text="sk-...（Ollama 等本地服务可留空）",
+        hint_text=(
+            "sk-...（Ollama 等本地服务可留空）" if current_provider != "anthropic" else "sk-ant-..."
+        ),
         password=True,
         can_reveal_password=True,
     )
@@ -40,8 +67,34 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
     model_field = ft.TextField(
         label="模型名称",
         value=config.get("model", ""),
-        hint_text="gpt-4o / deepseek-chat / llama3",
+        hint_text=(
+            "gpt-4o / deepseek-chat / llama3"
+            if current_provider != "anthropic"
+            else "claude-3-5-sonnet-latest / claude-3-5-haiku-latest"
+        ),
     )
+
+    def on_provider_change(e):
+        is_anthropic = (provider_dropdown.value or "openai").strip().lower() == "anthropic"
+        subtitle_text.value = (
+            "配置 Anthropic Claude API" if is_anthropic else "配置用于 AI 推理的 OpenAI 兼容 API"
+        )
+        base_url_field.hint_text = (
+            "https://api.anthropic.com（可选，留空使用默认值）"
+            if is_anthropic
+            else "https://api.openai.com/v1"
+        )
+        api_key_field.hint_text = (
+            "sk-ant-..." if is_anthropic else "sk-...（Ollama 等本地服务可留空）"
+        )
+        model_field.hint_text = (
+            "claude-3-5-sonnet-latest / claude-3-5-haiku-latest"
+            if is_anthropic
+            else "gpt-4o / deepseek-chat / llama3"
+        )
+        page.update()
+
+    provider_dropdown.on_change = on_provider_change
 
     system_prompt_field = ft.TextField(
         label="自定义系统提示词（可选）",
@@ -68,6 +121,7 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
         except ValueError:
             timeout_val = 300
         return {
+            "provider": (provider_dropdown.value or "openai").strip().lower(),
             "api_base_url": base_url_field.value.strip(),
             "api_key": api_key_field.value.strip(),
             "model": model_field.value.strip(),
@@ -100,10 +154,22 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
     async def on_test_connection(e):
         base_url = base_url_field.value.strip()
         model = model_field.value.strip()
-        logger.info("settings: test_connection clicked base_url={!r} model={!r}", base_url, model)
-        if not base_url or not model:
-            _show_snackbar("请先填写 API Base URL 和模型名称", ft.Colors.AMBER)
-            return
+        api_key = api_key_field.value.strip()
+        provider = (provider_dropdown.value or "openai").strip().lower()
+        logger.info(
+            "settings: test_connection clicked provider={!r} base_url={!r} model={!r}",
+            provider,
+            base_url,
+            model,
+        )
+        if provider == "anthropic":
+            if not api_key or not model:
+                _show_snackbar("请先填写 API Key 和模型名称", ft.Colors.AMBER)
+                return
+        else:
+            if not base_url or not model:
+                _show_snackbar("请先填写 API Base URL 和模型名称", ft.Colors.AMBER)
+                return
 
         # Save config first so LLMService can read it
         save_config(_collect_config())
@@ -123,10 +189,17 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
     # --- Load models handler ---
     async def on_load_models(e):
         base_url = base_url_field.value.strip()
-        logger.info("settings: load_models clicked base_url={!r}", base_url)
-        if not base_url:
-            _show_snackbar("请先填写 API Base URL", ft.Colors.AMBER)
-            return
+        api_key = api_key_field.value.strip()
+        provider = (provider_dropdown.value or "openai").strip().lower()
+        logger.info("settings: load_models clicked provider={!r} base_url={!r}", provider, base_url)
+        if provider == "anthropic":
+            if not api_key:
+                _show_snackbar("请先填写 API Key", ft.Colors.AMBER)
+                return
+        else:
+            if not base_url:
+                _show_snackbar("请先填写 API Base URL", ft.Colors.AMBER)
+                return
 
         # Save config first so LLMService can read it
         save_config(_collect_config())
@@ -211,12 +284,9 @@ def build_settings_tab(page: ft.Page, on_project_deleted=None) -> ft.Control:
             content=ft.Column(
                 controls=[
                     ft.Text("API 配置", size=20, weight=ft.FontWeight.BOLD),
-                    ft.Text(
-                        "配置用于 AI 推理的 OpenAI 兼容 API",
-                        color=ft.Colors.GREY,
-                        size=13,
-                    ),
+                    subtitle_text,
                     ft.Divider(),
+                    provider_dropdown,
                     base_url_field,
                     api_key_field,
                     model_field,

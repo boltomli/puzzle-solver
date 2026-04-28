@@ -441,3 +441,257 @@ class TestChatStream:
 
         with pytest.raises(ConnectionError, match="stream broken"):
             await llm.chat("sys", "user")
+
+
+# ---------------------------------------------------------------------------
+# Anthropic provider tests
+# ---------------------------------------------------------------------------
+
+
+class _FakeAnthropicStream:
+    """Async context manager exposing a text_stream async iterator."""
+
+    def __init__(self, texts: list[str | None]):
+        self._texts = texts
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    @property
+    def text_stream(self):
+        async def _gen():
+            for t in self._texts:
+                yield t
+
+        return _gen()
+
+
+class TestAnthropicEnsureClient:
+    """Tests for _ensure_client when provider=anthropic."""
+
+    def test_anthropic_client_created(self, tmp_path, monkeypatch):
+        """provider=anthropic with api_key should create an AsyncAnthropic client."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_base_url": "",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        assert llm._provider == "anthropic"
+        assert llm.anthropic_client is not None
+        assert llm.client is None
+        assert llm.model == "claude-3-5-sonnet-latest"
+
+    def test_anthropic_raises_without_api_key(self, tmp_path, monkeypatch):
+        """provider=anthropic without api_key should raise ValueError."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_base_url": "",
+                    "api_key": "",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        with pytest.raises(ValueError, match="Anthropic"):
+            llm._ensure_client()
+
+    def test_anthropic_default_model_when_empty(self, tmp_path, monkeypatch):
+        """provider=anthropic with empty model should default to claude-3-5-sonnet-latest."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_key": "sk-ant-test",
+                    "model": "",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        assert llm.model == "claude-3-5-sonnet-latest"
+
+    def test_anthropic_custom_base_url(self, tmp_path, monkeypatch):
+        """provider=anthropic with custom base_url should pass it to AsyncAnthropic."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_base_url": "https://my-proxy.example.com/v1",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        assert llm.anthropic_client is not None
+        assert llm._base_url == "https://my-proxy.example.com/v1"
+
+
+class TestAnthropicListModels:
+    """Tests for list_models when provider=anthropic."""
+
+    @pytest.mark.asyncio
+    async def test_returns_sorted_ids(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        m1 = MagicMock()
+        m1.id = "claude-3-5-sonnet-latest"
+        m2 = MagicMock()
+        m2.id = "claude-3-5-haiku-latest"
+        m3 = MagicMock()
+        m3.id = "claude-3-opus-latest"
+        mock_response = MagicMock()
+        mock_response.data = [m1, m2, m3]
+
+        llm = LLMService()
+        llm._ensure_client()
+        llm.anthropic_client.models.list = AsyncMock(return_value=mock_response)
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+
+        result = await llm.list_models()
+        assert result == [
+            "claude-3-5-haiku-latest",
+            "claude-3-5-sonnet-latest",
+            "claude-3-opus-latest",
+        ]
+
+
+class TestAnthropicChatStream:
+    """Tests for the streaming chat() method with Anthropic provider."""
+
+    @pytest.mark.asyncio
+    async def test_chat_collects_text_stream(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+
+        fake_stream = _FakeAnthropicStream(['{"status"', ': "ok"', "}", None])
+
+        def fake_messages_stream(**kwargs):
+            return fake_stream
+
+        llm.anthropic_client.messages.stream = fake_messages_stream
+
+        result = await llm.chat("sys", "user")
+        assert result == '{"status": "ok"}'
+
+    @pytest.mark.asyncio
+    async def test_chat_propagates_exception(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+
+        class BrokenStream:
+            async def __aenter__(self):
+                raise ConnectionError("anthropic stream broken")
+
+            async def __aexit__(self, *a):
+                return False
+
+        def fake_messages_stream(**kwargs):
+            return BrokenStream()
+
+        llm.anthropic_client.messages.stream = fake_messages_stream
+
+        with pytest.raises(ConnectionError, match="anthropic stream broken"):
+            await llm.chat("sys", "user")
+
+
+class TestAnthropicTestConnection:
+    """Tests for test_connection() with Anthropic provider."""
+
+    @pytest.mark.asyncio
+    async def test_returns_text_block_content(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "provider": "anthropic",
+                    "api_key": "sk-ant-test",
+                    "model": "claude-3-5-sonnet-latest",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config_mod, "_CONFIG_PATH", config_path)
+
+        llm = LLMService()
+        llm._ensure_client()
+        monkeypatch.setattr(llm, "_ensure_client", lambda: None)
+
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = '{"status": "ok"}'
+        mock_response = MagicMock()
+        mock_response.content = [text_block]
+
+        llm.anthropic_client.messages.create = AsyncMock(return_value=mock_response)
+
+        result = await llm.test_connection()
+        assert result == '{"status": "ok"}'

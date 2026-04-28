@@ -13,6 +13,7 @@ from loguru import logger
 _CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.json"
 
 _DEFAULT_CONFIG: dict[str, Any] = {
+    "provider": "openai",  # "openai" (OpenAI-compatible) or "anthropic"
     "api_base_url": "",
     "api_key": "",
     "model": "",
